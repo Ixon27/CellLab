@@ -1,0 +1,99 @@
+import { execFileSync } from 'node:child_process';
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readlinkSync, renameSync, rmSync, symlinkSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+if (process.platform !== 'darwin') throw new Error('macOS 앱 설치는 macOS에서만 가능합니다.');
+
+const root = fileURLToPath(new URL('../', import.meta.url));
+const name = 'CellLab';
+const bundleId = 'io.github.ixon27.cell-lab';
+const source = resolve(process.argv[2] ?? join(root, 'release', process.arch === 'arm64' ? 'mac-arm64' : 'mac', `${name}.app`));
+const app = join(homedir(), 'Applications', `${name}.app`);
+const shortcut = join(homedir(), 'Desktop', `${name}.app`);
+
+/** Optional per-Mac identity (see README). A stable signature keeps Keychain approvals across reinstalls. */
+const localIdentityName = 'CellLab Local Signing';
+
+function localSigningIdentity() {
+  const listing = execFileSync('/usr/bin/security', ['find-identity', '-p', 'codesigning'], { encoding: 'utf8' });
+  return listing.match(new RegExp(`\\b([0-9A-F]{40}) "${localIdentityName}"`))?.[1] ?? null;
+}
+function bundleIdentifier(path) {
+  try {
+    return execFileSync('/usr/bin/plutil', ['-extract', 'CFBundleIdentifier', 'raw', '-o', '-', join(path, 'Contents', 'Info.plist')], { encoding: 'utf8' }).trim();
+  } catch {
+    return null;
+  }
+}
+
+function entryExists(path) {
+  try { lstatSync(path); return true; }
+  catch (error) { if (error.code === 'ENOENT') return false; throw error; }
+}
+
+if (source === app || bundleIdentifier(source) !== bundleId || !existsSync(join(source, 'Contents', 'Resources', 'app.asar'))) {
+  throw new Error(`정상적인 Electron 앱 빌드가 아닙니다: ${source}\nnpm run pack:mac 으로 먼저 앱을 빌드하세요.`);
+}
+if (entryExists(app) && (lstatSync(app).isSymbolicLink() || bundleIdentifier(app) !== bundleId)) {
+  throw new Error(`${app} 에 다른 앱이나 바로가기가 있습니다. 덮어쓰지 않았습니다.`);
+}
+// Never terminate the user's app or any CLI jobs during an installation.
+{
+  const executablePattern = `^${app.replace(/[.*+?^${}()|[\]\\]/g, '\\const former = formerNames
+  .map((n) => ({ app: join(homedir(), 'Applications', `${n}.app`), shortcut: join(homedir(), 'Desktop', `${n}.app`) }))
+  .filter(({ app }) => entryExists(app) && !lstatSync(app).isSymbolicLink() && bundleIdentifier(app) === bundleId);
+// Never terminate the user's app or any CLI jobs during an installation.
+for (const path of [app, ...former.map((f) => f.app)]) {
+  const executablePattern = `^${path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/Contents/MacOS/`;
+  try {
+    execFileSync('/usr/bin/pgrep', ['-f', executablePattern], { stdio: 'ignore' });
+  } catch (error) {
+    if (error.status === 1) continue;
+    throw error;
+  }
+  throw new Error(`실행 중인 ${name}(또는 이전 이름의 앱)를 Cmd+Q로 종료한 뒤 다시 설치하세요. 앱이나 작업을 강제로 종료하지 않았습니다.`);
+}')}/Contents/MacOS/`;
+  let running = true;
+  try {
+    execFileSync('/usr/bin/pgrep', ['-f', executablePattern], { stdio: 'ignore' });
+  } catch (error) {
+    if (error.status !== 1) throw error;
+    running = false;
+  }
+  if (running) throw new Error(`실행 중인 ${name}를 Cmd+Q로 종료한 뒤 다시 설치하세요. 앱이나 작업을 강제로 종료하지 않았습니다.`);
+}
+
+mkdirSync(dirname(app), { recursive: true });
+const staging = mkdtempSync(join(dirname(app), '.cell-lab-install-'));
+const stagedApp = join(staging, `${name}.app`);
+const backup = join(staging, 'previous.app');
+try {
+  // ditto preserves the signed app's bundle metadata and resource forks.
+  execFileSync('/usr/bin/ditto', [source, stagedApp], { stdio: 'inherit' });
+  const identity = localSigningIdentity();
+  if (identity) {
+    // Ad-hoc signatures change with every build, so macOS re-asks for the Keychain item each time.
+    execFileSync('/usr/bin/codesign', ['--force', '--deep', '--sign', identity, stagedApp], { stdio: 'inherit' });
+    execFileSync('/usr/bin/codesign', ['--verify', '--deep', '--strict', stagedApp], { stdio: 'inherit' });
+    console.log(`이 Mac 전용 인증서(${localIdentityName})로 서명했습니다.`);
+  }
+  let backedUp = false;
+  if (entryExists(app)) { renameSync(app, backup); backedUp = true; }
+  try {
+    renameSync(stagedApp, app);
+  } catch (error) {
+    if (backedUp) renameSync(backup, app);
+    throw error;
+  }
+  mkdirSync(dirname(shortcut), { recursive: true });
+  if (!entryExists(shortcut)) symlinkSync(app, shortcut, 'dir');
+  else if (!lstatSync(shortcut).isSymbolicLink() || resolve(dirname(shortcut), readlinkSync(shortcut)) !== app) {
+    console.log(`바탕화면에 같은 이름의 항목이 있어 그대로 두었습니다: ${shortcut}`);
+  }
+  console.log(`설치됨: ${app}`);
+  console.log(`바탕화면이나 응용 프로그램 폴더에서 ${name}를 여세요. Node·브라우저·원본 저장소는 필요하지 않습니다.`);
+} finally {
+  rmSync(staging, { recursive: true, force: true });
+}

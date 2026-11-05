@@ -1,0 +1,356 @@
+@import 'tailwindcss';
+
+/* Theme: light by default; data-theme="dark" (resolved by state/theme.ts) switches tokens. */
+:root {
+  color-scheme: light;
+  --pr-canvas: #f3f6f9;
+  --pr-surface: #ffffff;
+  --pr-raised: #ffffff;
+  --pr-sunken: #edf1f5;
+  --pr-hover: rgb(16 42 74 / 0.05);
+  --pr-line: #dfe5ec;
+  --pr-line-strong: #c8d1dc;
+  --pr-fg: #142033;
+  --pr-fg-muted: #56637a;
+  --pr-fg-dim: #8792a5;
+  --pr-accent: #0077b6;
+  --pr-accent-fg: #ffffff;
+  --pr-accent-soft: rgb(0 119 182 / 0.09);
+  --pr-focus: #1a9bdc;
+  --pr-inverse: #142033;
+  --pr-inverse-fg: #ffffff;
+  --pr-success: #0f9d58;
+  --pr-success-soft: rgb(15 157 88 / 0.1);
+  --pr-warning: #b7791f;
+  --pr-warning-soft: rgb(183 121 31 / 0.12);
+  --pr-danger: #d93636;
+  --pr-danger-soft: rgb(217 54 54 / 0.1);
+  --pr-effort: #a8812f;
+  --pr-effort-max: #ed682c;
+  --pr-scrim: rgb(15 18 24 / 0.32);
+  --pr-shadow-pop: 0 12px 32px -8px rgb(16 32 56 / 0.18), 0 0 0 1px rgb(16 32 56 / 0.04);
+  --pr-shadow-card: 0 1px 2px rgb(16 32 56 / 0.04), 0 2px 8px -2px rgb(16 32 56 / 0.06);
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --pr-canvas: #11151c;
+  --pr-surface: #171c24;
+  --pr-raised: #1d232d;
+  --pr-sunken: #0d1117;
+  --pr-hover: rgb(255 255 255 / 0.06);
+  --pr-line: #29303b;
+  --pr-line-strong: #3a4250;
+  --pr-fg: #e6eaf1;
+  --pr-fg-muted: #9aa5b6;
+  --pr-fg-dim: #687386;
+  --pr-accent: #4ed4ff;
+  --pr-accent-fg: #0b1015;
+  --pr-accent-soft: rgb(78 212 255 / 0.14);
+  --pr-focus: #23b2ff;
+  --pr-inverse: #e8ecf4;
+  --pr-inverse-fg: #11151c;
+  --pr-success: #06ee7a;
+  --pr-success-soft: rgb(6 238 122 / 0.14);
+  --pr-warning: #f5c46b;
+  --pr-warning-soft: rgb(245 196 107 / 0.14);
+  --pr-danger: #ff6b6b;
+  --pr-danger-soft: rgb(255 107 107 / 0.14);
+  --pr-effort: #d8c090;
+  --pr-effort-max: #ff843f;
+  --pr-scrim: rgb(5 7 10 / 0.55);
+  --pr-shadow-pop: 0 16px 48px -12px rgb(0 0 0 / 0.6);
+  --pr-shadow-card: 0 1px 2px rgb(0 0 0 / 0.3);
+}
+
+@theme inline {
+  --color-canvas: var(--pr-canvas);
+  --color-surface: var(--pr-surface);
+  --color-raised: var(--pr-raised);
+  --color-sunken: var(--pr-sunken);
+  --color-hover: var(--pr-hover);
+  --color-line: var(--pr-line);
+  --color-line-strong: var(--pr-line-strong);
+  --color-fg: var(--pr-fg);
+  --color-fg-muted: var(--pr-fg-muted);
+  --color-fg-dim: var(--pr-fg-dim);
+  --color-accent: var(--pr-accent);
+  --color-accent-fg: var(--pr-accent-fg);
+  --color-accent-soft: var(--pr-accent-soft);
+  --color-focus: var(--pr-focus);
+  --color-inverse: var(--pr-inverse);
+  --color-inverse-fg: var(--pr-inverse-fg);
+  --color-success: var(--pr-success);
+  --color-success-soft: var(--pr-success-soft);
+  --color-warning: var(--pr-warning);
+  --color-warning-soft: var(--pr-warning-soft);
+  --color-danger: var(--pr-danger);
+  --color-danger-soft: var(--pr-danger-soft);
+  --color-effort: var(--pr-effort);
+  --color-scrim: var(--pr-scrim);
+  --shadow-pop: var(--pr-shadow-pop);
+  --shadow-card: var(--pr-shadow-card);
+}
+
+@theme {
+  --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Apple SD Gothic Neo', 'Pretendard Variable', Pretendard, 'Segoe UI', 'Malgun Gothic', sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+@layer base {
+  body {
+    @apply bg-canvas text-fg antialiased;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--pr-accent) 28%, transparent);
+  }
+
+  /* In the base layer so `outline-none` + ring utilities on inputs still win. */
+  :focus-visible {
+    outline: 2px solid var(--pr-focus);
+    outline-offset: 2px;
+  }
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--pr-line-strong);
+  border: 3px solid transparent;
+  background-clip: content-box;
+  border-radius: 999px;
+}
+
+/* macOS window: the header doubles as the title bar (Windows keeps its native frame). */
+html[data-desktop='darwin'] .app-drag {
+  -webkit-app-region: drag;
+}
+html[data-desktop='darwin'] .app-drag :is(a, button, input, select, textarea),
+html[data-desktop='darwin'] .no-drag {
+  -webkit-app-region: no-drag;
+}
+html[data-desktop='darwin'] .app-header {
+  padding-left: 84px;
+}
+
+/* Keep the fullscreen toolbar below the native draggable title bar, even while scrolling. */
+html[data-desktop='darwin'] .figure-fullscreen {
+  padding-top: 56px;
+}
+
+/* Markdown body (analysis, chat) */
+.md {
+  @apply text-[14.5px] leading-[1.75] break-words;
+}
+.md h1,
+.md h2,
+.md h3 {
+  @apply font-bold mt-5 mb-2;
+}
+.md h4 {
+  @apply text-[16px] font-bold mt-6 mb-2 pb-1 border-b border-line;
+}
+.md h5 {
+  @apply text-[14.5px] font-semibold mt-5 mb-1.5;
+}
+.md h6 {
+  @apply text-[14px] font-semibold mt-4 mb-1;
+}
+.md p {
+  @apply my-2;
+}
+.md ul {
+  @apply list-disc pl-5 my-1.5;
+}
+.md ol {
+  @apply list-decimal pl-5 my-1.5;
+}
+.md li {
+  @apply my-1;
+}
+.md li > p {
+  @apply my-0;
+}
+.md strong {
+  @apply font-semibold text-fg;
+}
+.md mark {
+  @apply rounded-sm bg-warning-soft px-0.5 text-fg;
+}
+.md blockquote {
+  @apply my-2 rounded-r-lg border-l-4 border-accent bg-accent-soft/50 py-1.5 pl-3 pr-2 text-fg;
+}
+.md tr:nth-child(even) td {
+  @apply bg-sunken;
+}
+.md code {
+  @apply bg-sunken rounded px-1 text-[12.5px];
+}
+.md pre {
+  @apply bg-sunken rounded p-2 overflow-x-auto my-2;
+}
+.md pre code {
+  @apply bg-transparent p-0;
+}
+.md table {
+  @apply border-collapse my-2 text-[13px] block overflow-x-auto;
+}
+.md th,
+.md td {
+  @apply border border-line px-2 py-1 align-top;
+}
+.md th {
+  @apply bg-sunken;
+}
+.md a {
+  @apply text-accent underline;
+}
+/* Motion */
+
+/* Popover (AI picker) */
+.pr-pop {
+  transform-origin: var(--pr-origin, top);
+  transition:
+    opacity 180ms var(--ease-out),
+    transform 180ms var(--ease-out);
+}
+@starting-style {
+  .pr-pop {
+    opacity: 0;
+    transform: translateY(var(--pr-pop-dy, -4px)) scale(0.97);
+  }
+}
+.pr-pop[data-closing] {
+  opacity: 0;
+  transform: translateY(var(--pr-pop-dy, -4px)) scale(0.97);
+  transition-duration: 120ms;
+}
+
+/* Selection tip, citation popover: unmounted by the library, so entry only. */
+.pr-tip {
+  transition:
+    opacity 120ms var(--ease-out),
+    transform 120ms var(--ease-out);
+}
+@starting-style {
+  .pr-tip {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+}
+
+/* Dialog */
+.pr-dialog {
+  transition:
+    opacity 200ms var(--ease-out),
+    transform 200ms var(--ease-out);
+}
+@starting-style {
+  .pr-dialog {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+.pr-dialog[data-closing] {
+  opacity: 0;
+  transform: scale(0.97);
+  transition-duration: 150ms;
+}
+.pr-scrim {
+  transition: opacity 200ms var(--ease-out);
+}
+@starting-style {
+  .pr-scrim {
+    opacity: 0;
+  }
+}
+.pr-scrim[data-closing] {
+  opacity: 0;
+  transition-duration: 150ms;
+}
+
+/* Toast */
+.pr-toast {
+  transition:
+    opacity 220ms var(--ease-out),
+    transform 220ms var(--ease-out);
+}
+@starting-style {
+  .pr-toast {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+.pr-toast[data-closing] {
+  opacity: 0;
+  transform: translateY(8px);
+  transition-duration: 160ms;
+}
+
+/* One-shot entries. `backwards`, never `both`: inline styles must win after the run. */
+.pr-row-new {
+  animation: pr-row-in 240ms var(--ease-out) backwards;
+}
+@keyframes pr-row-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+.pr-panel-enter {
+  animation: pr-panel-in 300ms var(--ease-drawer) backwards;
+}
+@keyframes pr-panel-in {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+}
+.pr-fade-in {
+  animation: pr-fade 200ms ease-out backwards;
+}
+@keyframes pr-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+/* Accordion */
+.pr-accordion {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 220ms var(--ease-out);
+}
+.pr-accordion[data-open] {
+  grid-template-rows: 1fr;
+}
+.pr-accordion > * {
+  overflow: hidden;
+  min-height: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pr-pop,
+  .pr-tip,
+  .pr-dialog,
+  .pr-toast,
+  .pr-row-new,
+  .pr-panel-enter {
+    transform: none !important;
+  }
+}

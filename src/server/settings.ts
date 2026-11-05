@@ -1,0 +1,114 @@
+import { db } from './db';
+import { BIN } from './config';
+import { HttpError } from './http-error';
+import { preferredEffort } from '../shared/models';
+
+export type Engine = 'claude' | 'codex';
+
+/** Per-engine model + requested effort for quick/heavy; execution checks current CLI support. */
+export interface EngineProfiles {
+  quickModel: string;
+  heavyModel: string;
+  quickEffort: string;
+  heavyEffort: string;
+}
+
+export interface Settings {
+  engine: Engine;
+  claude: EngineProfiles;
+  /** Empty model: the Codex CLI default. */
+  codex: EngineProfiles;
+  contactEmail: string;
+  onboardingDone: boolean;
+}
+
+export const DEFAULT_SETTINGS: Settings = {
+  engine: BIN.claude ? 'claude' : BIN.codex ? 'codex' : 'claude',
+  claude: { quickModel: 'sonnet', heavyModel: 'opus', quickEffort: 'low', heavyEffort: 'high' },
+  codex: { quickModel: '', heavyModel: '', quickEffort: 'low', heavyEffort: 'high' },
+  contactEmail: '',
+  onboardingDone: false,
+};
+
+function isObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
+/** Recursively overlay `over` onto `base`; only keys present in `base` are kept. */
+function deepMerge<T>(base: T, over: unknown): T {
+  if (!isObject(base) || !isObject(over)) return (over === undefined ? base : over) as T;
+  const out: Record<string, unknown> = { ...base };
+  for (const key of Object.keys(base)) {
+    if (key in over) out[key] = deepMerge((base as Record<string, unknown>)[key], over[key]);
+  }
+  return out as T;
+}
+
+export function getSettings(): Settings {
+  const row = db.prepare("SELECT value FROM settings WHERE key='app'").get() as { value: string } | undefined;
+  let stored: unknown = {};
+  if (row) {
+    try {
+      stored = JSON.parse(row.value);
+    } catch {
+      stored = {};
+    }
+  }
+  // Older settings stored one Codex model for both profiles.
+  if (isObject(stored) && isObject(stored.codex) && typeof stored.codex.model === 'string' && stored.codex.quickModel === undefined) {
+    stored = { ...stored, codex: { ...stored.codex, quickModel: stored.codex.model, heavyModel: stored.codex.model } };
+  }
+  const settings = deepMerge(DEFAULT_SETTINGS, stored);
+  for (const engine of ['claude', 'codex'] as const) {
+    const profiles = settings[engine];
+    if (typeof profiles?.quickEffort === 'string') profiles.quickEffort = preferredEffort(profiles.quickEffort, 'quick');
+    if (typeof profiles?.heavyEffort === 'string') profiles.heavyEffort = preferredEffort(profiles.heavyEffort, 'heavy');
+  }
+  return settings;
+}
+
+export function saveSettings(patch: unknown): Settings {
+  if (!isObject(patch)) throw new HttpError(400, '설정은 객체 형식이어야 합니다');
+  const merged = deepMerge(getSettings(), patch);
+  if (typeof merged.codex?.quickModel !== 'string' || typeof merged.codex.heavyModel !== 'string'
+    || typeof merged.claude?.quickModel !== 'string' || !merged.claude.quickModel.trim()
+    || typeof merged.claude.heavyModel !== 'string' || !merged.claude.heavyModel.trim()
+    || typeof merged.onboardingDone !== 'boolean' || typeof merged.contactEmail !== 'string') {
+    throw new HttpError(400, '설정 값의 형식이 올바르지 않습니다');
+  }
+  // Efforts reach CLI arguments (Codex: `-c model_reasoning_effort="…"`), so only bare lowercase words pass.
+  const efforts = [merged.claude.quickEffort, merged.claude.heavyEffort, merged.codex.quickEffort, merged.codex.heavyEffort];
+  if (!efforts.every((e) => typeof e === 'string' && /^[a-z]*$/.test(e))) {
+    throw new HttpError(400, 'AI 작업 수준 값이 올바르지 않습니다');
+  }
+  for (const engine of ['claude', 'codex'] as const) {
+    merged[engine].quickEffort = preferredEffort(merged[engine].quickEffort, 'quick');
+    merged[engine].heavyEffort = preferredEffort(merged[engine].heavyEffort, 'heavy');
+  }
+  merged.contactEmail = merged.contactEmail.trim();
+  if (merged.contactEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(merged.contactEmail)) {
+    throw new HttpError(400, '연락처 이메일을 확인하세요');
+  }
+  if (merged.engine !== 'claude' && merged.engine !== 'codex') merged.engine = 'claude';
+  db.prepare("INSERT INTO settings(key,value) VALUES('app',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(
+    JSON.stringify(merged),
+  );
+  return merged;
+}
+
+let lastEngine: Engine | null | undefined;
+
+/** The engine of the most recent successful AI response; null before the first one. */
+export function getLastEngine(): Engine | null {
+  if (lastEngine === undefined) {
+    const row = db.prepare("SELECT value FROM settings WHERE key='lastEngine'").get() as { value: string } | undefined;
+    lastEngine = row?.value === 'claude' || row?.value === 'codex' ? row.value : null;
+  }
+  return lastEngine;
+}
+
+export function rememberLastEngine(engine: Engine): void {
+  if (getLastEngine() === engine) return;
+  db.prepare("INSERT INTO settings(key,value) VALUES('lastEngine',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(engine);
+  lastEngine = engine;
+}

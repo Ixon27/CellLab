@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <rect x="64" y="64" width="896" height="896" rx="200" fill="#0f6e74"/>
+  <!-- Erlenmeyer flask -->
+  <path d="M412 238 h200 v40 h-28 v170 l176 286 c26 42 -4 96 -54 96 H318 c-50 0 -80 -54 -54 -96 l176 -286 V278 h-28 z" fill="#e8f6f5"/>
+  <!-- medium level -->
+  <path d="M358 606 h308 l88 142 c12 20 -2 46 -26 46 H296 c-24 0 -38 -26 -26 -46 z" fill="#7fd1c9"/>
+  <!-- two cells -->
+  <circle cx="452" cy="700" r="50" fill="#0f6e74"/>
+  <circle cx="452" cy="700" r="18" fill="#e8f6f5"/>
+  <circle cx="588" cy="676" r="38" fill="#0f6e74"/>
+  <circle cx="588" cy="676" r="14" fill="#e8f6f5"/>
+</svg>

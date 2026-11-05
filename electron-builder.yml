@@ -1,0 +1,67 @@
+appId: io.github.ixon27.cell-lab
+productName: CellLab
+electronVersion: 45.0.0
+directories:
+  app: build-desktop/app
+  output: release
+  buildResources: build-assets
+files:
+  - package.json
+  - build-desktop/main.mjs
+  - build-desktop/backend.mjs
+  - build-desktop/preload.cjs
+  - dist/**/*
+  - prompts/*.md
+  - seed/**/*
+  - LICENSE
+asar: true
+npmRebuild: false
+nodeGypRebuild: false
+forceCodeSigning: false
+publish: null
+artifactName: CellLab-${version}-${arch}.${ext}
+mac:
+  category: public.app-category.productivity
+  icon: build-assets/icon.icns
+  minimumSystemVersion: '13.0'
+  identity: '-'
+  hardenedRuntime: false
+  notarize: false
+  target:
+    - dmg
+    - zip
+  extendInfo:
+    NSHumanReadableCopyright: Copyright © 2026 Ixon27
+    NSAppTransportSecurity:
+      NSAllowsArbitraryLoads: false
+      NSAllowsLocalNetworking: true
+dmg:
+  title: CellLab
+  sign: false
+  filesystem: HFS+
+  window:
+    width: 540
+    height: 380
+  contents:
+    - x: 140
+      y: 180
+      type: file
+    - x: 400
+      y: 180
+      type: link
+      path: /Applications
+win:
+  icon: build-assets/icon.png
+  target:
+    - target: nsis
+      arch: [x64]
+nsis:
+  # Per-user install: no administrator prompt, uninstalls from Windows Settings like any app.
+  oneClick: true
+  perMachine: false
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: CellLab
+  # App data (%APPDATA%\cell-lab) stays on uninstall, as on macOS.
+  deleteAppDataOnUninstall: false
+  artifactName: CellLab-${version}-windows-${arch}-setup.${ext}
