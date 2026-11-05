@@ -10,6 +10,7 @@ import { SettingsDialog } from './components/SettingsDialog';
 import { isMac, SETTINGS_SHORTCUT } from './labels';
 import { toggleTheme, useResolvedTheme } from './state/theme';
 import { ToastProvider } from './components/Toast';
+import { Catalog } from './pages/Catalog';
 
 function ThemeToggle() {
   const dark = useResolvedTheme() === 'dark';
@@ -115,6 +116,9 @@ export function App() {
           <Sidebar />
           <main className="min-h-0 min-w-0 flex-1 overflow-auto">
             <Switch>
+              <Route path="/catalog">
+                <Catalog />
+              </Route>
               <Route>
                 <div className="p-8 text-fg-muted">없는 페이지입니다.</div>
               </Route>
