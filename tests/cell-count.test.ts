@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { hemocytometer, seedingVolume, targetCellsFor } from '../src/shared/cell-count';
+import { formatCount, hemocytometer, seedingVolume, targetCellsFor } from '../src/shared/cell-count';
 
 describe('세포 수 계산', () => {
   it('혈구계산판 농도와 생존율을 계산한다', () => {
@@ -17,5 +17,10 @@ describe('세포 수 계산', () => {
   });
   it('카운트가 0이면 생존율은 미정이다', () => {
     expect(hemocytometer({ liveCounts: [0], deadCounts: [0], dilutionFactor: 2 })).toEqual({ cellsPerMl: 0, viabilityPct: null });
+  });
+  it('세포 수를 지수 표기로 보여 준다', () => {
+    expect(formatCount(1e6)).toBe('1.00 × 10⁶');
+    expect(formatCount(1.5e5)).toBe('1.50 × 10⁵');
+    expect(formatCount(0)).toBe('0');
   });
 });

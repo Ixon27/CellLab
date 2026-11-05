@@ -118,7 +118,7 @@ function LineageInner({ line, focusNodeId, onChanged }: { line: CellLineDto; foc
     let timer: number | undefined;
     const fit = () => {
       window.clearTimeout(timer);
-      timer = window.setTimeout(() => void fitView({ padding: 0.15 }), 60);
+      timer = window.setTimeout(() => void fitView({ padding: 0.15, maxZoom: 1 }), 60);
     };
     const observer = new ResizeObserver(fit);
     observer.observe(container.current);
@@ -171,7 +171,7 @@ function LineageInner({ line, focusNodeId, onChanged }: { line: CellLineDto; foc
             onNodeClick={(_, n) => setSelected(n.id)}
             onPaneClick={() => setSelected(null)}
             fitView
-            fitViewOptions={{ padding: 0.15 }}
+            fitViewOptions={{ padding: 0.15, maxZoom: 1 }}
             minZoom={0.1}
             proOptions={{ hideAttribution: true }}
           >

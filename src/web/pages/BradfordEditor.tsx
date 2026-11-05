@@ -58,7 +58,7 @@ function RepInputs({ reps, onChange }: { reps: Rep[]; onChange(reps: Rep[]): voi
           <button
             title={rep.excluded ? '측정값 포함' : '측정값 제외'}
             aria-pressed={rep.excluded}
-            className={smallBtnCls}
+            className={`${smallBtnCls} shrink-0 whitespace-nowrap`}
             onClick={() => onChange(reps.map((r, j) => (j === i ? { ...r, excluded: !r.excluded } : r)))}
           >
             {rep.excluded ? '포함' : '제외'}

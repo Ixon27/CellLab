@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { hemocytometer, seedingVolume, targetCellsFor } from '../../shared/cell-count';
+import { formatCount, hemocytometer, seedingVolume, targetCellsFor } from '../../shared/cell-count';
 import { VESSEL_AREA_CM2 } from '../../shared/catalog';
 import { Field, inputCls, smallBtnCls } from './Dialog';
 
@@ -23,7 +23,9 @@ export function CellCountCalculator({ vessel, onApply }: { vessel: string; onApp
         deadCounts: dead.filter((v) => v.trim()).map(Number),
         dilutionFactor: Number(dilution),
       });
-      return { ...counts, totalCells: counts.cellsPerMl * Number(volume) };
+      // Viability is recorded to 0.1 %, the precision a hemocytometer count supports.
+      const viabilityPct = counts.viabilityPct === null ? null : Math.round(counts.viabilityPct * 10) / 10;
+      return { cellsPerMl: counts.cellsPerMl, viabilityPct, totalCells: counts.cellsPerMl * Number(volume) };
     } catch {
       return null;
     }
@@ -78,8 +80,8 @@ export function CellCountCalculator({ vessel, onApply }: { vessel: string; onApp
       </div>
       {result ? (
         <div className="text-sm">
-          {result.cellsPerMl.toExponential(2)} cells/mL · 생존율 {result.viabilityPct?.toFixed(1) ?? '미정'}% · 총{' '}
-          {result.totalCells.toExponential(2)}개{' '}
+          {formatCount(result.cellsPerMl)} cells/mL · 생존율 {result.viabilityPct?.toFixed(1) ?? '미정'}% · 총{' '}
+          {formatCount(result.totalCells)}개{' '}
           <button type="button" className={smallBtnCls} onClick={() => onApply(result)}>
             기록에 적용
           </button>

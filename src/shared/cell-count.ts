@@ -38,3 +38,13 @@ export function targetCellsFor(vessel: string, densityPerCm2: number): number | 
   if (!Number.isFinite(densityPerCm2) || densityPerCm2 < 0) throw new Error('접종 밀도를 확인하세요');
   return area * densityPerCm2;
 }
+
+const SUPERSCRIPT: Record<string, string> = { '-': '⁻', '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴', '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹' };
+
+/** Cell counts as lab notation, e.g. 1000000 → "1.00 × 10⁶". */
+export function formatCount(n: number): string {
+  if (n === 0) return '0';
+  const [mantissa, exponent] = n.toExponential(2).split('e');
+  const power = String(Number(exponent)).replace(/./g, (ch) => SUPERSCRIPT[ch]);
+  return `${mantissa} × 10${power}`;
+}

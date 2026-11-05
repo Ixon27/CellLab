@@ -1,5 +1,6 @@
 import * as Plot from '@observablehq/plot';
 import { useEffect, useMemo, useState } from 'react';
+import { formatCount } from '../../shared/cell-count';
 import type { CellLineDto, CultureDto, LogDto, LotDto, ProfileDto } from '../../shared/cell-line';
 import { api } from '../api';
 import { Field, inputCls, primaryBtnCls, smallBtnCls } from '../components/Dialog';
@@ -222,9 +223,9 @@ export function NodeDrawer({
               </div>
               <p className="mt-1">
                 {l.confluencyPct !== null && `Confluency ${l.confluencyPct}% · `}
-                {l.cellsPerMl !== null && `${l.cellsPerMl.toExponential(2)} cells/mL · `}
+                {l.cellsPerMl !== null && `${formatCount(l.cellsPerMl)} cells/mL · `}
                 {l.viabilityPct !== null && `생존율 ${l.viabilityPct}% · `}
-                {l.totalCells !== null && `총 ${l.totalCells.toExponential(2)}개`}
+                {l.totalCells !== null && `총 ${formatCount(l.totalCells)}개`}
               </p>
               {l.mycoplasma && <p>마이코플라스마: {{ negative: '음성', positive: '양성', pending: '검사 중' }[l.mycoplasma]}</p>}
               {Object.entries(l.extra).map(([k, v]) => (

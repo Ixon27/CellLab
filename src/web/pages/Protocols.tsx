@@ -7,8 +7,8 @@ import { useToast } from '../components/Toast';
 
 export const PROTOCOL_CATEGORIES = [
   { value: 'culture_sop', label: '배양 SOP' },
-  { value: 'western', label: '웨스턴 블롯' },
-  { value: 'bradford', label: '브래드퍼드 정량' },
+  { value: 'western', label: 'Western blot' },
+  { value: 'bradford', label: 'Bradford' },
   { value: 'protein', label: '단백질' },
   { value: 'other', label: '기타' },
 ] as const;
