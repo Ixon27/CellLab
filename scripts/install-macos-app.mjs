@@ -41,20 +41,7 @@ if (entryExists(app) && (lstatSync(app).isSymbolicLink() || bundleIdentifier(app
 }
 // Never terminate the user's app or any CLI jobs during an installation.
 {
-  const executablePattern = `^${app.replace(/[.*+?^${}()|[\]\\]/g, '\\const former = formerNames
-  .map((n) => ({ app: join(homedir(), 'Applications', `${n}.app`), shortcut: join(homedir(), 'Desktop', `${n}.app`) }))
-  .filter(({ app }) => entryExists(app) && !lstatSync(app).isSymbolicLink() && bundleIdentifier(app) === bundleId);
-// Never terminate the user's app or any CLI jobs during an installation.
-for (const path of [app, ...former.map((f) => f.app)]) {
-  const executablePattern = `^${path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/Contents/MacOS/`;
-  try {
-    execFileSync('/usr/bin/pgrep', ['-f', executablePattern], { stdio: 'ignore' });
-  } catch (error) {
-    if (error.status === 1) continue;
-    throw error;
-  }
-  throw new Error(`실행 중인 ${name}(또는 이전 이름의 앱)를 Cmd+Q로 종료한 뒤 다시 설치하세요. 앱이나 작업을 강제로 종료하지 않았습니다.`);
-}')}/Contents/MacOS/`;
+  const executablePattern = `^${app.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/Contents/MacOS/`;
   let running = true;
   try {
     execFileSync('/usr/bin/pgrep', ['-f', executablePattern], { stdio: 'ignore' });
