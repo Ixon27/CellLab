@@ -11,6 +11,15 @@ import { isMac, SETTINGS_SHORTCUT } from './labels';
 import { toggleTheme, useResolvedTheme } from './state/theme';
 import { ToastProvider } from './components/Toast';
 import { Catalog } from './pages/Catalog';
+import { CellLines } from './pages/CellLines';
+import { CellLineDetail } from './pages/CellLineDetail';
+import { BradfordList } from './pages/BradfordList';
+import { BradfordEditor } from './pages/BradfordEditor';
+import { Protocols } from './pages/Protocols';
+import { ProtocolDetail } from './pages/ProtocolDetail';
+import { WesternList } from './pages/WesternList';
+import { WesternRun } from './pages/WesternRun';
+import { Dashboard } from './pages/Dashboard';
 
 function ThemeToggle() {
   const dark = useResolvedTheme() === 'dark';
@@ -119,6 +128,15 @@ export function App() {
               <Route path="/catalog">
                 <Catalog />
               </Route>
+              <Route path="/cells"><CellLines /></Route>
+              <Route path="/cells/:id">{params => <CellLineDetail id={params.id} />}</Route>
+              <Route path="/bradford"><BradfordList /></Route>
+              <Route path="/bradford/:id">{params => <BradfordEditor id={params.id} />}</Route>
+              <Route path="/protocols"><Protocols /></Route>
+              <Route path="/protocols/:id">{params => <ProtocolDetail id={params.id} />}</Route>
+              <Route path="/western"><WesternList /></Route>
+              <Route path="/western/:id">{params => <WesternRun key={params.id} id={params.id} />}</Route>
+              <Route path="/"><Dashboard /></Route>
               <Route>
                 <div className="p-8 text-fg-muted">없는 페이지입니다.</div>
               </Route>

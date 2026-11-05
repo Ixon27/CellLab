@@ -102,6 +102,7 @@ export function startJob(subjectId: string | null, kind: JobKind, runner: (ctx: 
   db.prepare('INSERT INTO jobs(id,subject_id,kind,status,progress,message,error,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)').run(
     row.id,
     row.subject_id,
+    row.kind,
     row.status,
     row.progress,
     row.message,

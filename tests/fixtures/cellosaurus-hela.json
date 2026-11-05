@@ -1,0 +1,248 @@
+{
+  "accession-list": [
+    {
+      "type": "primary",
+      "value": "CVCL_0030"
+    }
+  ],
+  "name-list": [
+    {
+      "type": "identifier",
+      "value": "HeLa"
+    },
+    {
+      "type": "synonym",
+      "value": "HELA"
+    },
+    {
+      "type": "synonym",
+      "value": "Hela"
+    },
+    {
+      "type": "synonym",
+      "value": "He La"
+    },
+    {
+      "type": "synonym",
+      "value": "He-La"
+    },
+    {
+      "type": "synonym",
+      "value": "HeLa-CCL2"
+    },
+    {
+      "type": "synonym",
+      "value": "Henrietta Lacks cells"
+    },
+    {
+      "type": "synonym",
+      "value": "Helacyton gartleri"
+    }
+  ],
+  "species-list": [
+    {
+      "label": "Homo sapiens (Human)"
+    }
+  ],
+  "disease-list": [
+    {
+      "label": "Human papillomavirus-related endocervical adenocarcinoma"
+    }
+  ],
+  "derived-from-site-list": [
+    {
+      "site": {
+        "value": "Uterus, cervix"
+      }
+    }
+  ],
+  "category": "Cancer cell line",
+  "sex": "Female",
+  "doubling-time-list": [
+    {
+      "doubling-time-value": "30-48 hours"
+    },
+    {
+      "doubling-time-value": "~48 hours"
+    },
+    {
+      "doubling-time-value": "1.3 days"
+    }
+  ],
+  "comment-list": [],
+  "xref-list": [
+    {
+      "database": "Abcam",
+      "accession": "ab255448",
+      "category": "Cell line collections (Providers)",
+      "url": "https://www.abcam.com/ab255448.html"
+    },
+    {
+      "database": "Abcam",
+      "accession": "ab255928",
+      "category": "Cell line collections (Providers)",
+      "url": "https://www.abcam.com/ab255928.html"
+    },
+    {
+      "database": "Abcam",
+      "accession": "ab260075",
+      "category": "Cell line collections (Providers)",
+      "url": "https://www.abcam.com/ab260075.html"
+    },
+    {
+      "database": "Abcam",
+      "accession": "ab271142",
+      "category": "Cell line collections (Providers)",
+      "url": "https://www.abcam.com/ab271142.html"
+    },
+    {
+      "database": "Abcam",
+      "accession": "ab275466",
+      "category": "Cell line collections (Providers)",
+      "url": "https://www.abcam.com/ab275466.html"
+    },
+    {
+      "database": "AddexBio",
+      "accession": "C0008001/44",
+      "category": "Cell line collections (Providers)",
+      "url": "https://www.addexbio.com/productdetail?pid=44"
+    },
+    {
+      "database": "ATCC",
+      "accession": "CCL-2",
+      "category": "Cell line collections (Providers)",
+      "url": "https://www.atcc.org/products/CCL-2"
+    },
+    {
+      "database": "ATCC",
+      "accession": "CRL-7923",
+      "category": "Cell line collections (Providers)"
+    },
+    {
+      "database": "ATCC",
+      "accession": "CRM-CCL-2",
+      "category": "Cell line collections (Providers)",
+      "url": "https://www.atcc.org/products/CRM-CCL-2"
+    },
+    {
+      "database": "BCRC",
+      "accession": "60005",
+      "category": "Cell line collections (Providers)",
+      "url": "https://catalog.bcrc.firdi.org.tw/BcrcContent?bid=60005"
+    },
+    {
+      "database": "BCRJ",
+      "accession": "0100",
+      "category": "Cell line collections (Providers)",
+      "url": "https://bcrj.org.br/pesquisa/?search=0100"
+    },
+    {
+      "database": "BEI_Resources",
+      "accession": "ARP-153",
+      "category": "Cell line collections (Providers)",
+      "url": "https://www.beiresources.org/Catalog/cellBanks/ARP-153.aspx"
+    },
+    {
+      "database": "CCLV",
+      "accession": "CCLV-RIE 0082",
+      "category": "Cell line collections (Providers)"
+    },
+    {
+      "database": "CCTCC",
+      "accession": "GDC0009",
+      "category": "Cell line collections (Providers)"
+    },
+    {
+      "database": "CLS",
+      "accession": "300194",
+      "category": "Cell line collections (Providers)",
+      "url": "https://www.cytion.com/300194"
+    },
+    {
+      "database": "DSMZ",
+      "accession": "ACC-57",
+      "category": "Cell line collections (Providers)",
+      "url": "https://www.dsmz.de/collection/catalogue/details/culture/ACC-57"
+    },
+    {
+      "database": "ECACC",
+      "accession": "93021013",
+      "category": "Cell line collections (Providers)",
+      "url": "https://www.culturecollections.org.uk/products/celllines/detail.jsp?refId=93021013"
+    },
+    {
+      "database": "EDITGENE",
+      "accession": "EDC00013",
+      "category": "Cell line collections (Providers)",
+      "url": "https://www.editxor.com/products/cat/?keyword=EDC00013"
+    },
+    {
+      "database": "Hysigen",
+      "accession": "TCH-C193",
+      "category": "Cell line collections (Providers)",
+      "url": "https://hysigen.com/TCH-C193.html"
+    },
+    {
+      "database": "ICLC",
+      "accession": "HTL95023",
+      "category": "Cell line collections (Providers)",
+      "url": "http://www.iclc.it/details/det_list.php?line_id=HTL95023"
+    },
+    {
+      "database": "IZSLER",
+      "accession": "BS TCL 20",
+      "category": "Cell line collections (Providers)"
+    },
+    {
+      "database": "JCRB",
+      "accession": "JCRB9004",
+      "category": "Cell line collections (Providers)",
+      "url": "https://cellbank.nibiohn.go.jp//~cellbank/en/search_res_det.cgi?RNO=JCRB9004"
+    },
+    {
+      "database": "KCB",
+      "accession": "KCB 86019YJ",
+      "category": "Cell line collections (Providers)"
+    },
+    {
+      "database": "KCB",
+      "accession": "KCB 90024YJ",
+      "category": "Cell line collections (Providers)"
+    },
+    {
+      "database": "KCLB",
+      "accession": "10002",
+      "category": "Cell line collections (Providers)",
+      "url": "https://cellbank.snu.ac.kr/cellline/search?sc=y&q=10002"
+    },
+    {
+      "database": "NCBI_Iran",
+      "accession": "C115",
+      "category": "Cell line collections (Providers)"
+    },
+    {
+      "database": "RCB",
+      "accession": "RCB0007",
+      "category": "Cell line collections (Providers)",
+      "url": "https://cellbank.brc.riken.jp/cell_bank/CellInfo/?cellNo=RCB0007&lang=En"
+    },
+    {
+      "database": "RCB",
+      "accession": "RCB3680",
+      "category": "Cell line collections (Providers)",
+      "url": "https://cellbank.brc.riken.jp/cell_bank/CellInfo/?cellNo=RCB3680&lang=En"
+    },
+    {
+      "database": "TKG",
+      "accession": "TKG 0331",
+      "category": "Cell line collections (Providers)",
+      "url": "http://www2.idac.tohoku.ac.jp/dep/ccr/TKGdate/TKGvo103/0331.html"
+    },
+    {
+      "database": "Ubigene",
+      "accession": "YC-A012",
+      "category": "Cell line collections (Providers)",
+      "url": "https://www.ubigene.us/product/?cate=0&mykeyword=YC-A012"
+    }
+  ]
+}
