@@ -40,6 +40,22 @@ lineage.get('/cultures/:id/logs', (c) => {
     .all(c.req.param('id')) as unknown as LogRow[];
   return c.json(rows.map(toLogDto));
 });
+lineage.get('/cell-lines/:id/logs', (c) => {
+  const id = c.req.param('id');
+  getLineRow(id);
+  const rows = db
+    .prepare(
+      'SELECT l.*,c.label AS culture_label,c.passage AS culture_passage FROM culture_logs l JOIN cultures c ON c.id=l.culture_id WHERE c.cell_line_id=? ORDER BY l.at DESC,l.created_at DESC,l.id DESC',
+    )
+    .all(id) as unknown as (LogRow & { culture_label: string; culture_passage: number })[];
+  return c.json(
+    rows.map((row) => ({
+      ...toLogDto(row),
+      cultureLabel: row.culture_label,
+      culturePassage: row.culture_passage,
+    })),
+  );
+});
 lineage.put('/lots/:id', async (c) => {
   const b = await c.req.json<LineageInput>();
   const result = tx(() => {

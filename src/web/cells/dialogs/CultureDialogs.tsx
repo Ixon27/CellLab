@@ -13,6 +13,7 @@ interface Props {
   lot?: LotDto;
   profiles: ProfileDto[];
   initialLog?: LogDto;
+  initialAt?: string;
   logType?: 'observation' | 'medium_change';
   onClose(): void;
   onSaved(): void;
@@ -41,7 +42,7 @@ function CultureDialog({ action, ...p }: Props & { action: Action }) {
   const [error, setError] = useState<string | null>(null);
   const [label, setLabel] = useState('');
   const [at, setAt] = useState(() => {
-    const d = new Date(p.initialLog?.at ?? Date.now());
+    const d = new Date(p.initialLog?.at ?? p.initialAt ?? Date.now());
     return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
   });
   const [passage, setPassage] = useState(String(p.lot?.passage ?? p.culture?.passage ?? 0));

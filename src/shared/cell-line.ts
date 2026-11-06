@@ -140,6 +140,12 @@ export interface LogDto {
   createdAt: string;
 }
 
+/** A culture log joined to its culture for the line-wide daily journal. */
+export interface CellLineLogDto extends LogDto {
+  cultureLabel: string;
+  culturePassage: number;
+}
+
 /** `GET /api/cell-lines/:id` */
 export interface CellLineDetailDto {
   line: CellLineDto;

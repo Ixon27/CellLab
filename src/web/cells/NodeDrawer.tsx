@@ -17,7 +17,7 @@ export const CULTURE_STATUS_LABELS: Record<CultureDto['status'], string> = {
   discarded: '폐기',
   contaminated: '오염',
 };
-const logLabels: Record<LogDto['type'], string> = {
+export const logLabels: Record<LogDto['type'], string> = {
   observation: '관찰',
   medium_change: '배지 교체',
   passage: '계대',
@@ -32,6 +32,7 @@ export function NodeDrawer({
   lot,
   culture,
   profiles,
+  logs,
   onClose,
   onChanged,
 }: {
@@ -39,6 +40,7 @@ export function NodeDrawer({
   lot?: LotDto;
   culture?: CultureDto;
   profiles: ProfileDto[];
+  logs: LogDto[];
   onClose(): void;
   onChanged(): void;
 }) {
@@ -50,12 +52,9 @@ export function NodeDrawer({
   const [vessel, setVessel] = useState(culture?.vessel ?? '');
   const [profile, setProfile] = useState(culture?.profileId ?? '');
   const [notes, setNotes] = useState(node.notes);
-  const [logs, setLogs] = useState<LogDto[]>([]);
-  const [loadError, setLoadError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [dialog, setDialog] = useState<'thaw' | 'log' | 'feed' | 'passage' | 'freeze' | 'end' | null>(null);
   const [editing, setEditing] = useState<LogDto | undefined>();
-  const [revision, setRevision] = useState(0);
   useEffect(() => {
     setLabel(node.label);
     setNotes(node.notes);
@@ -64,34 +63,20 @@ export function NodeDrawer({
     setVessel(culture?.vessel ?? '');
     setProfile(culture?.profileId ?? '');
   }, [node, lot, culture]);
-  useEffect(() => {
-    if (!culture) return;
-    let active = true;
-    api<LogDto[]>(`/api/cultures/${culture.id}/logs`)
-      .then((data) => {
-        if (active) {
-          setLogs(data);
-          setLoadError(null);
-        }
-      })
-      .catch((e) => {
-        if (active) setLoadError((e as Error).message);
-      });
-    return () => {
-      active = false;
-    };
-  }, [culture?.id, revision]);
   const chart = useMemo<Plot.PlotOptions>(() => {
-    const points = logs.filter((l) => l.confluencyPct !== null).map((l) => ({ at: new Date(l.at), value: l.confluencyPct }));
+    const points = logs
+      .filter((l) => l.confluencyPct !== null)
+      .map((l) => ({ at: new Date(l.at), value: l.confluencyPct }))
+      .sort((a, b) => +a.at - +b.at);
     return {
-      height: 180,
+      height: 140,
       x: { label: '관찰일' },
       y: { domain: [0, 100], label: 'Confluency (%)' },
       marks: [Plot.line(points, { x: 'at', y: 'value' }), Plot.dot(points, { x: 'at', y: 'value', tip: true })],
     };
   }, [logs]);
+  const lastConfluency = logs.find((l) => l.confluencyPct !== null);
   const changed = () => {
-    setRevision((n) => n + 1);
     onChanged();
   };
   const props = {
@@ -121,69 +106,77 @@ export function NodeDrawer({
     }
   };
   return (
-    <aside
-      aria-label="계보 노드 상세"
-      className="pr-panel-enter w-full shrink-0 overflow-y-auto rounded-xl border border-line bg-raised p-4 lg:w-[390px] lg:max-h-[720px]"
-    >
+    <aside aria-label="계보 노드 상세" className="workbench-panel cell-selection">
+      <p className="workbench-eyebrow">{lot ? '선택한 바이알' : '선택한 배양'}</p>
       <div className="mb-3 flex items-center justify-between gap-2">
         <h3 className="break-all font-semibold">{node.label}</h3>
         <button className={smallBtnCls} onClick={onClose}>
-          닫기
+          기본 선택
         </button>
       </div>
       <p className="mb-3 text-xs text-fg-muted">
         P{node.passage ?? '미정'} · {new Date(lot?.eventAt ?? culture!.startedAt).toLocaleString('ko-KR')}{' '}
         {culture && `· ${CULTURE_STATUS_LABELS[culture.status]}`}
       </p>
-      <Field label="라벨">
-        <input className={inputCls} value={label} onChange={(e) => setLabel(e.target.value)} />
-      </Field>
-      {lot ? (
-        <>
-          <p className="mb-3 text-sm">
-            {lot.origin === 'received' ? '입고' : '동결'} · 남은 {lot.vialsRemaining}/{lot.vialsInitial} 바이알 ·{' '}
-            {lot.cellsPerVial?.toLocaleString() ?? '미정'} cells/vial
-          </p>
-          <p className="mb-3 text-xs text-fg-muted">
-            동결 배지: {lot.freezingMedium ?? '미정'} · 공급자 로트: {lot.supplierLot ?? '미정'}
-          </p>
-          <Field label="보관 위치">
-            <input className={inputCls} value={location} onChange={(e) => setLocation(e.target.value)} />
-          </Field>
-          <Field label="남은 바이알 수동 보정">
-            <input
-              className={inputCls}
-              type="number"
-              min="0"
-              max={lot.vialsInitial}
-              value={vials}
-              onChange={(e) => setVials(e.target.value)}
-            />
-          </Field>
-        </>
-      ) : (
-        <>
-          <Field label="배양 용기">
-            <OptionCombobox category="vessel" value={vessel} onChange={setVessel} />
-          </Field>
-          <Field label="연결 배양 조건">
-            <select className={inputCls} value={profile} onChange={(e) => setProfile(e.target.value)}>
-              <option value="">연결하지 않음</option>
-              {profiles.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-          </Field>
-        </>
+      {culture && (
+        <p className="mb-3 text-xs text-fg-muted">
+          {culture.vessel} · 최근 confluency{' '}
+          {lastConfluency ? `${lastConfluency.confluencyPct}% · ${new Date(lastConfluency.at).toLocaleDateString('ko-KR')}` : '미정'}
+        </p>
       )}
-      <Field label="메모">
-        <textarea className={inputCls} value={notes} onChange={(e) => setNotes(e.target.value)} />
-      </Field>
-      <button className={primaryBtnCls} disabled={busy} onClick={() => void save()}>
-        정보 저장
-      </button>
+      {culture?.endNote && <p className="mb-3 text-xs text-fg-muted">종료 메모: {culture.endNote}</p>}
+      <details className="cell-info-details">
+        <summary>정보 수정 · 배양 조건 연결</summary>
+        <Field label="라벨">
+          <input className={inputCls} value={label} onChange={(e) => setLabel(e.target.value)} />
+        </Field>
+        {lot ? (
+          <>
+            <p className="mb-3 text-sm">
+              {lot.origin === 'received' ? '입고' : '동결'} · 남은 {lot.vialsRemaining}/{lot.vialsInitial} 바이알 ·{' '}
+              {lot.cellsPerVial?.toLocaleString() ?? '미정'} cells/vial
+            </p>
+            <p className="mb-3 text-xs text-fg-muted">
+              동결 배지: {lot.freezingMedium ?? '미정'} · 공급자 로트: {lot.supplierLot ?? '미정'}
+            </p>
+            <Field label="보관 위치">
+              <input className={inputCls} value={location} onChange={(e) => setLocation(e.target.value)} />
+            </Field>
+            <Field label="남은 바이알 수동 보정">
+              <input
+                className={inputCls}
+                type="number"
+                min="0"
+                max={lot.vialsInitial}
+                value={vials}
+                onChange={(e) => setVials(e.target.value)}
+              />
+            </Field>
+          </>
+        ) : (
+          <>
+            <Field label="배양 용기">
+              <OptionCombobox category="vessel" value={vessel} onChange={setVessel} />
+            </Field>
+            <Field label="연결 배양 조건">
+              <select className={inputCls} value={profile} onChange={(e) => setProfile(e.target.value)}>
+                <option value="">연결하지 않음</option>
+                {profiles.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </>
+        )}
+        <Field label="메모">
+          <textarea className={inputCls} value={notes} onChange={(e) => setNotes(e.target.value)} />
+        </Field>
+        <button className={primaryBtnCls} disabled={busy} onClick={() => void save()}>
+          정보 저장
+        </button>
+      </details>
       <div className="my-4 flex flex-wrap gap-2">
         {lot ? (
           <button className={smallBtnCls} disabled={lot.vialsRemaining === 0} onClick={() => setDialog('thaw')}>
@@ -191,7 +184,7 @@ export function NodeDrawer({
           </button>
         ) : (
           <>
-            <button className={smallBtnCls} onClick={() => setDialog('log')}>
+            <button className={smallBtnCls} disabled={culture!.status !== 'active'} onClick={() => setDialog('log')}>
               관찰 기록
             </button>
             <button className={smallBtnCls} disabled={culture!.status !== 'active'} onClick={() => setDialog('feed')}>
@@ -205,17 +198,20 @@ export function NodeDrawer({
           </>
         )}
       </div>
+      {culture && culture.status !== 'active' && (
+        <p className="text-xs text-fg-muted">종료된 배양에는 새 작업을 기록할 수 없습니다. 기존 기록은 수정할 수 있습니다.</p>
+      )}
+      {lot?.vialsRemaining === 0 && <p className="text-xs text-fg-muted">남은 바이알이 없어 해동할 수 없습니다.</p>}
       {culture && (
         <>
           <h4 className="text-sm font-medium">Confluency 변화</h4>
-          <PlotFrame options={chart} />
-          <h4 className="mt-4 text-sm font-medium">기록 목록</h4>
-          {loadError && (
-            <p role="alert" className="text-sm text-danger">
-              {loadError}
-            </p>
+          {logs.some((l) => l.confluencyPct !== null) ? (
+            <PlotFrame options={chart} />
+          ) : (
+            <p className="cell-empty">Confluency 관찰값이 없습니다.</p>
           )}
-          {logs.length === 0 && !loadError && <p className="my-3 text-sm text-fg-muted">아직 기록이 없습니다.</p>}
+          <h4 className="mt-4 text-sm font-medium">기록 목록</h4>
+          {logs.length === 0 && <p className="my-3 text-sm text-fg-muted">아직 기록이 없습니다.</p>}
           {logs.map((l) => (
             <article key={l.id} className="mt-3 rounded-lg border border-line p-3 text-xs">
               <div className="font-medium">
@@ -261,6 +257,7 @@ export function NodeDrawer({
                   </button>
                 </div>
               )}
+              {(l.type === 'passage' || l.type === 'freeze') && <p className="mt-2 text-fg-muted">계보 작업 기록 · 수정·삭제 보호</p>}
             </article>
           ))}
         </>

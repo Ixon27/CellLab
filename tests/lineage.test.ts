@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import type * as Config from '../src/server/config';
-import type { CultureDto, LogDto, LotDto } from '../src/shared/cell-line';
+import type { CellLineLogDto, CultureDto, LogDto, LotDto } from '../src/shared/cell-line';
 import type { LineageGraph } from '../src/shared/lineage';
 vi.mock('../src/server/config', async (importOriginal) => {
   const actual = await importOriginal<typeof Config>();
@@ -145,5 +145,66 @@ describe('재고와 배양 계보', () => {
     expect(dashboard.lowStock.every((l) => l.vialsRemaining <= 2)).toBe(true);
     expect(dashboard.recentBradford[0].id).toBe('assay');
     expect(dashboard.recentWestern[0].id).toBe('western');
+  });
+  it('세포주 전체 기록을 날짜·생성일·id 내림차순으로 격리해 반환한다', async () => {
+    for (const id of ['journal', 'other-journal', 'empty-journal']) {
+      db.prepare('INSERT INTO cell_lines(id,name,created_at,updated_at) VALUES(?,?,?,?)').run(id, id, now(), now());
+    }
+    const createCulture = async (line: string, label: string, passage: number) => {
+      const response = await app.request(
+        `/api/cell-lines/${line}/cultures`,
+        json('POST', { label, passage, vessel: 'T25', startedAt: at }),
+      );
+      expect(response.status).toBe(201);
+      const data = await response.json();
+      expect(data).toHaveProperty('culture.id');
+      return data.culture as CultureDto;
+    };
+    const first = await createCulture('journal', '첫 배양', 3);
+    const second = await createCulture('journal', '둘째 배양', 4);
+    const other = await createCulture('other-journal', '다른 세포주', 8);
+    for (const [id, cultureId, date, created] of [
+      ['journal-old', first.id, '2026-10-01T09:00:00.000Z', '2026-10-05T09:00:00.000Z'],
+      ['journal-new-a', first.id, '2026-10-03T09:00:00.000Z', '2026-10-04T09:00:00.000Z'],
+      ['journal-new-b', second.id, '2026-10-03T09:00:00.000Z', '2026-10-04T09:00:00.000Z'],
+      ['journal-new-c', second.id, '2026-10-03T09:00:00.000Z', '2026-10-03T09:00:00.000Z'],
+      ['journal-other', other.id, '2026-10-06T09:00:00.000Z', '2026-10-06T09:00:00.000Z'],
+    ]) {
+      db.prepare('INSERT INTO culture_logs(id,culture_id,at,type,created_at) VALUES(?,?,?,?,?)').run(id, cultureId, date, 'note', created);
+    }
+    const read = async () => (await (await app.request('/api/cell-lines/journal/logs')).json()) as CellLineLogDto[];
+    const logs = await read();
+    expect(logs.map((l) => l.id)).toEqual(['journal-new-b', 'journal-new-a', 'journal-new-c', 'journal-old']);
+    expect(logs[0]).toMatchObject({ cultureId: second.id, cultureLabel: '둘째 배양', culturePassage: 4, extra: {} });
+    expect(logs[1]).toMatchObject({ cultureId: first.id, cultureLabel: '첫 배양', culturePassage: 3 });
+    expect(await (await app.request('/api/cell-lines/empty-journal/logs')).json()).toEqual([]);
+    expect((await app.request('/api/cell-lines/missing-journal/logs')).status).toBe(404);
+    expect(
+      (
+        await app.request(
+          '/api/logs/journal-old',
+          json('PUT', {
+            at: '2026-10-07T09:00:00.000Z',
+            type: 'observation',
+            confluencyPct: 67,
+            extra: { 수행자: '연구자', pH: '7.2' },
+            note: '관찰 수정',
+          }),
+        )
+      ).status,
+    ).toBe(200);
+    expect((await read())[0]).toMatchObject({
+      id: 'journal-old',
+      confluencyPct: 67,
+      note: '관찰 수정',
+      extra: { 수행자: '연구자', pH: '7.2' },
+    });
+    expect((await app.request(`/api/cultures/${first.id}`, json('PUT', { label: '변경한 배양' }))).status).toBe(200);
+    expect((await read())[0].cultureLabel).toBe('변경한 배양');
+    expect((await app.request('/api/logs/journal-old', { method: 'DELETE' })).status).toBe(200);
+    expect((await read()).some((l) => l.id === 'journal-old')).toBe(false);
+    expect(((await (await app.request('/api/cell-lines/other-journal/logs')).json()) as CellLineLogDto[]).map((l) => l.id)).toEqual([
+      'journal-other',
+    ]);
   });
 });

@@ -11,10 +11,10 @@ import { LineageView } from '../cells/LineageView';
 import { LiteraturePanel } from '../cells/LiteraturePanel';
 import { SopPanel } from '../cells/SopPanel';
 const tabs = [
+  ['lineage', '계보·기록'],
   ['info', '정보'],
   ['profiles', '배양 조건'],
   ['literature', '문헌·분양처 비교'],
-  ['lineage', '계보·재고'],
   ['sop', '배양 SOP'],
 ] as const;
 export function CellLineDetail({ id }: { id: string }) {
@@ -26,7 +26,7 @@ export function CellLineDetail({ id }: { id: string }) {
   const [, navigate] = useLocation();
   const search = useSearch();
   const params = new URLSearchParams(search);
-  const tab = params.get('tab') ?? 'info';
+  const tab = tabs.some(([key]) => key === params.get('tab')) ? params.get('tab')! : 'lineage';
   const toast = useToast();
   const reload = useCallback(() => {
     api<CellLineDetailDto>(`/api/cell-lines/${id}`)
@@ -108,17 +108,35 @@ export function CellLineDetail({ id }: { id: string }) {
   }
   if (!detail || !form) return <div className="p-6 text-fg-muted">세포주 정보를 불러오는 중입니다.</div>;
   return (
-    <div className="mx-auto grid max-w-7xl gap-5 p-6">
-      <header className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">{detail.line.name}</h1>
-        <button className={dangerBtnCls} onClick={() => setDeleting(true)}>
-          세포주 삭제
-        </button>
+    <div className="cell-detail-page">
+      <header className="cell-detail-header">
+        <div>
+          <p className="workbench-eyebrow">세포주 작업 공간</p>
+          <h1>{detail.line.name}</h1>
+          <p className="cell-detail-subtitle">
+            {[detail.line.species, detail.line.sourceBank, detail.line.catalogNo].filter(Boolean).join(' · ') ||
+              '계보와 배양 기록을 한곳에서 관리하세요.'}
+          </p>
+        </div>
+        <div className="cell-overview-stats">
+          <div>
+            <strong>{detail.cultures.filter((c) => c.status === 'active').length}</strong>
+            <span>활성 배양</span>
+          </div>
+          <div>
+            <strong>{detail.cultures.length}</strong>
+            <span>전체 배양</span>
+          </div>
+          <div>
+            <strong>{detail.lots.reduce((sum, l) => sum + l.vialsRemaining, 0)}</strong>
+            <span>보관 바이알</span>
+          </div>
+        </div>
       </header>
       {detail.line.caution && <div className="rounded-lg bg-danger-soft p-3 text-danger">{detail.line.caution}</div>}
-      <nav className="flex flex-wrap gap-2 border-b border-line pb-3">
+      <nav className="cell-detail-tabs" aria-label="세포주 보기">
         {tabs.map(([key, label]) => (
-          <button key={key} className={tab === key ? primaryBtnCls : btnCls} onClick={() => selectTab(key)}>
+          <button key={key} aria-current={tab === key ? 'page' : undefined} onClick={() => selectTab(key)}>
             {label}
           </button>
         ))}
@@ -129,6 +147,9 @@ export function CellLineDetail({ id }: { id: string }) {
           <div className="flex gap-2">
             <button className={primaryBtnCls} disabled={busy} onClick={save}>
               저장
+            </button>
+            <button className={`${btnCls} !text-danger`} onClick={() => setDeleting(true)}>
+              세포주 삭제
             </button>
             {form.providerUrl && (
               <button className={btnCls} onClick={() => window.open(form.providerUrl!, '_blank')}>
@@ -156,7 +177,20 @@ export function CellLineDetail({ id }: { id: string }) {
           }}
         />
       )}
-      {tab === 'lineage' && <LineageView line={detail.line} focusNodeId={params.get('node')} onChanged={reload} />}{' '}
+      {tab === 'lineage' && (
+        <LineageView
+          line={detail.line}
+          focusNodeId={params.get('node')}
+          onSelectNode={(node) => {
+            const p = new URLSearchParams(search);
+            p.set('tab', 'lineage');
+            if (node) p.set('node', node);
+            else p.delete('node');
+            navigate(`/cells/${id}?${p}`, { replace: true });
+          }}
+          onChanged={reload}
+        />
+      )}{' '}
       {tab === 'sop' && <SopPanel line={detail.line} onChanged={reload} />}{' '}
       {deleting && (
         <Dialog
