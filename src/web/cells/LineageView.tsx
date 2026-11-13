@@ -6,6 +6,7 @@ import { FlaskConical, TestTube } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CellLineDetailDto, CellLineDto, CellLineLogDto, LogDto, LotDto } from '../../shared/cell-line';
 import type { LineageGraph, LineageNode } from '../../shared/lineage';
+import { FEED_MODE_LABELS, RECOVERY_LABELS } from '../../shared/culture-operations';
 import { api } from '../api';
 import { inputCls, smallBtnCls } from '../components/Dialog';
 import { useToast } from '../components/Toast';
@@ -38,6 +39,7 @@ interface Props {
   focusNodeId: string | null;
   onSelectNode(id: string | null): void;
   onChanged(): void;
+  externalRevision?: number;
 }
 export function LineageView(props: Props) {
   return (
@@ -46,7 +48,7 @@ export function LineageView(props: Props) {
     </ReactFlowProvider>
   );
 }
-function LineageInner({ line, focusNodeId, onSelectNode, onChanged }: Props) {
+function LineageInner({ line, focusNodeId, onSelectNode, onChanged, externalRevision = 0 }: Props) {
   const { fitView } = useReactFlow();
   const theme = useResolvedTheme();
   const toast = useToast();
@@ -92,6 +94,9 @@ function LineageInner({ line, focusNodeId, onSelectNode, onChanged }: Props) {
       ++request.current;
     };
   }, [load]);
+  useEffect(() => {
+    if (externalRevision > 0) void load();
+  }, [externalRevision, load]);
   const selected =
     focusNodeId ?? detail?.cultures.find((c) => c.status === 'active')?.id ?? detail?.cultures[0]?.id ?? detail?.lots[0]?.id ?? null;
   const visible = useMemo(() => graph.nodes.filter((n) => !hideEnded || n.kind === 'lot' || n.status === 'active'), [graph, hideEnded]);
@@ -267,9 +272,12 @@ function LineageInner({ line, focusNodeId, onSelectNode, onChanged }: Props) {
                         </button>
                       </td>
                       <td>{l.confluencyPct == null ? '—' : `${l.confluencyPct}%`}</td>
-                      <td>{logLabels[l.type]}</td>
+                      <td>{l.feed ? FEED_MODE_LABELS[l.feed.mode] : logLabels[l.type]}</td>
                       <td className="cell-log-note" title={l.note}>
                         {l.extra['수행자'] && `${l.extra['수행자']} · `}
+                        {l.feed && `${l.feed.mediumLabel ?? '배지 미기록'} · 제거 ${l.feed.removedMl ?? '?'} / 추가 ${l.feed.addedMl ?? '?'} mL · `}
+                        {l.morphology && `형태: ${l.morphology} · `}
+                        {!!l.photos?.length && `사진 ${l.photos.length}장 · `}
                         {l.note || '—'}
                       </td>
                       <td>
@@ -342,6 +350,7 @@ function LineageInner({ line, focusNodeId, onSelectNode, onChanged }: Props) {
                 <th>남은 / 최초</th>
                 <th>보관 위치</th>
                 <th>입고 / 동결일</th>
+                <th>회복 확인</th>
                 <th>작업</th>
               </tr>
             </thead>
@@ -359,6 +368,7 @@ function LineageInner({ line, focusNodeId, onSelectNode, onChanged }: Props) {
                   </td>
                   <td>{l.location || '위치 미정'}</td>
                   <td>{new Date(l.eventAt).toLocaleDateString('ko-KR')}</td>
+                  <td>{l.recovery ? RECOVERY_LABELS[l.recovery.status] : '미기록'}</td>
                   <td>
                     <div className="cell-row-actions">
                       <button

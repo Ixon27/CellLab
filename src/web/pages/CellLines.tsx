@@ -6,6 +6,7 @@ import { api } from '../api';
 import { inputCls, primaryBtnCls } from '../components/Dialog';
 import { useToast } from '../components/Toast';
 import { RegisterCellLineDialog } from '../cells/RegisterCellLineDialog';
+import { PageHeader } from '../components/Workbench';
 
 export function CellLines() {
   const [lines, setLines] = useState<CellLineListItem[]>([]);
@@ -25,18 +26,18 @@ export function CellLines() {
   const filtered = lines.filter((l) => [l.name, l.species, ...l.tags].join(' ').toLowerCase().includes(q.toLowerCase()));
   const groups = [...new Set(filtered.map((l) => l.category || '기타'))];
   return (
-    <div className="mx-auto max-w-[1440px] px-6 py-6 lg:px-8">
-      <header className="mb-6 flex items-end justify-between gap-4">
-        <div>
-          <p className="workbench-eyebrow mb-1">Cell library</p>
-          <h1 className="text-[20px] font-semibold tracking-tight">세포주</h1>
-          <p className="mt-1.5 text-[12px] text-fg-muted">세포주를 열어 배양 계보와 일별 기록을 이어가세요.</p>
-        </div>
-        <button className={primaryBtnCls} onClick={() => setRegister(true)}>
-          <Plus size={14} />
-          세포주 등록
-        </button>
-      </header>
+    <div className="workbench-page">
+      <PageHeader
+        eyebrow="Cell library"
+        title="세포주"
+        note="세포주를 열어 배양 계보와 일별 기록을 이어가세요."
+        actions={
+          <button className={primaryBtnCls} onClick={() => setRegister(true)}>
+            <Plus size={14} />
+            세포주 등록
+          </button>
+        }
+      />
       <div className="relative mb-7 max-w-sm">
         <Search size={14} className="pointer-events-none absolute left-2.5 top-2.5 text-fg-dim" />
         <input

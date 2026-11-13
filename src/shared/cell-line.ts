@@ -1,4 +1,7 @@
 import type { CultureFieldKey, CultureProfileFields } from './culture';
+import type { CultureExecutionPlan } from './culture-plan';
+import type { FieldUsage, MediumPurpose } from './literature';
+import type { CultureVesselUseDto, FeedRecord, FreezePlanRecord, LotRecovery, PassageRecord, PhotoDto, RepresentativeThaw } from './culture-operations';
 
 export type GrowthMode = 'adherent' | 'suspension' | 'mixed';
 
@@ -69,6 +72,17 @@ export interface SourceRef {
   sourceLabel: string;
   url: string;
   quote: string;
+  /** 채택 사유. 문헌 보고서에서 채택한 값에는 필수다(서버 검증). */
+  reason?: string;
+  /** 채택한 값의 근거 문장 id (보고서 자료 `sourceKey` 범위). */
+  evidenceIds?: string[];
+  /** 채택 당시 원문의 값 상태. explicit_not_used는 원문에 명시된 "사용 안 함"이다. */
+  usage?: FieldUsage;
+  /** 배지·시약이 보고된 용도. 일반 배양 항목에 처리·동결 값을 쓰려면 `purposeConfirmed`가 필요하다. */
+  purpose?: MediumPurpose;
+  purposeConfirmed?: boolean;
+  reportId?: string;
+  sourceKey?: string;
 }
 
 export type ProfileOrigin = 'manual' | 'literature' | 'provider';
@@ -80,6 +94,7 @@ export interface ProfileDto {
   origin: ProfileOrigin;
   fields: CultureProfileFields;
   sourceRefs: SourceRef[];
+  executionPlan?: CultureExecutionPlan | null;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -100,6 +115,11 @@ export interface LotDto {
   supplierLot: string | null;
   eventAt: string;
   notes: string;
+  /** Freeze allocation recorded when the lot was frozen from a culture; null for received/legacy lots. */
+  freezePlan: FreezePlanRecord | null;
+  representativeThaw: RepresentativeThaw | null;
+  /** Null = recovery never recorded. */
+  recovery: LotRecovery | null;
   createdAt: string;
 }
 
@@ -119,6 +139,8 @@ export interface CultureDto {
   endedAt: string | null;
   endNote: string | null;
   notes: string;
+  /** Current vessel assignment with a frozen product snapshot; null for legacy/free-text vessels. */
+  vesselUse: CultureVesselUseDto | null;
   createdAt: string;
 }
 
@@ -137,6 +159,13 @@ export interface LogDto {
   /** Free key-value items the user adds to a record. */
   extra: Record<string, string>;
   note: string;
+  /** Typed view of medium_change extra; null for other types. */
+  feed: FeedRecord | null;
+  /** Observation morphology text, if recorded. */
+  morphology: string | null;
+  photos: PhotoDto[];
+  /** Typed view of a passage log; null for other types. */
+  passage: PassageRecord | null;
   createdAt: string;
 }
 

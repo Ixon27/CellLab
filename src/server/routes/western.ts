@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { nanoid } from 'nanoid';
 import { computeBradford, validateBradfordData } from '../../shared/bradford';
-import { createWesternData, defaultLanes, validateWesternData } from '../../shared/western';
+import { createWesternData, defaultLanes, validateWesternData, validateWesternLoading, westernAutoRecord } from '../../shared/western';
 import type { WesternData, WesternRunMeta } from '../../shared/western';
 import { db, now, parseJsonColumn } from '../db';
 import { HttpError } from '../http-error';
@@ -75,7 +75,11 @@ western.post('/western', async (c) => {
     title = body.title === undefined ? `Western ${timestamp.slice(0, 10)}` : cleanTitle(body.title);
   let data = createWesternData();
   try {
+    if (body.loading !== undefined) data.loading = validateWesternLoading(body.loading);
     if (body.fromBradford !== undefined) data = importBradford(data, body.fromBradford);
+    const auto = westernAutoRecord(data);
+    data.record.r08 = auto.r08;
+    data.record.r09 = auto.r09;
   } catch (e) {
     if (e instanceof HttpError) throw e;
     throw new HttpError(400, (e as Error).message);

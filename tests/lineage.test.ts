@@ -208,3 +208,47 @@ describe('재고와 배양 계보', () => {
     ]);
   });
 });
+
+it('입고 메모와 해동·동결 시점의 작업 조건을 이후 조회에도 보존한다', async () => {
+  db.prepare('INSERT INTO cell_lines(id,name,created_at,updated_at) VALUES(?,?,?,?)').run('audit-line', '기록 검증 세포', now(), now());
+  const received = await app.request(
+    '/api/cell-lines/audit-line/cultures',
+    json('POST', {
+      passage: 0,
+      vessel: 'T25',
+      startedAt: at,
+      notes: '입고 당시 확인한 상태',
+    }),
+  );
+  const receivedBody = await received.json();
+  expect(receivedBody.culture.notes).toBe('입고 당시 확인한 상태');
+  const lotResponse = await app.request('/api/cell-lines/audit-line/lots', json('POST', { passage: 0, vials: 1, receivedAt: at }));
+  const lotBody = await lotResponse.json();
+  const thawResponse = await app.request(
+    `/api/lots/${lotBody.id}/thaw`,
+    json('POST', {
+      vessel: 'T25',
+      at,
+      note: '실제 확인 메모\n조건 버전: 작업 전 확인한 v1',
+    }),
+  );
+  const thawBody = await thawResponse.json();
+  const freezeResponse = await app.request(
+    `/api/cultures/${thawBody.culture.id}/freeze`,
+    json('POST', {
+      at,
+      vials: 2,
+      location: '검증 위치',
+      endCulture: true,
+      note: '동결 당시 기록한 조건 v2',
+      notes: '보관 lot에 남길 메모',
+    }),
+  );
+  expect(freezeResponse.status).toBe(201);
+  const freezeBody = await freezeResponse.json();
+  expect(freezeBody.lot.notes).toBe('보관 lot에 남길 메모');
+  const history = await (await app.request(`/api/cultures/${thawBody.culture.id}/logs`)).json();
+  expect(history.find((l: LogDto) => l.type === 'note').note).toContain('실제 확인 메모\n조건 버전: 작업 전 확인한 v1');
+  expect(history.find((l: LogDto) => l.type === 'freeze').note).toContain('동결 당시 기록한 조건 v2');
+  expect(history.find((l: LogDto) => l.type === 'note').note).not.toContain('조건 v2');
+});

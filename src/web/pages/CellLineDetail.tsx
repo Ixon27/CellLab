@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useLocation, useSearch } from 'wouter';
 import type { CellLineDetailDto } from '../../shared/cell-line';
 import { api } from '../api';
-import { Dialog, btnCls, primaryBtnCls, dangerBtnCls, inputCls } from '../components/Dialog';
+import { Dialog, btnCls, primaryBtnCls, solidDangerBtnCls, inputCls } from '../components/Dialog';
 import { useToast } from '../components/Toast';
 import { CellLineInfoForm } from '../cells/CellLineInfoForm';
 import type { LineForm } from '../cells/CellLineInfoForm';
@@ -10,7 +10,10 @@ import { ProfileEditor } from '../cells/ProfileEditor';
 import { LineageView } from '../cells/LineageView';
 import { LiteraturePanel } from '../cells/LiteraturePanel';
 import { SopPanel } from '../cells/SopPanel';
+import { CultureWorkbench } from '../cells/CultureWorkbench';
+import { CurrentCultureSummary } from '../cells/CurrentCultureSummary';
 const tabs = [
+  ['execution', '실행 안내'],
   ['lineage', '계보·기록'],
   ['info', '정보'],
   ['profiles', '배양 조건'],
@@ -26,7 +29,8 @@ export function CellLineDetail({ id }: { id: string }) {
   const [, navigate] = useLocation();
   const search = useSearch();
   const params = new URLSearchParams(search);
-  const tab = tabs.some(([key]) => key === params.get('tab')) ? params.get('tab')! : 'lineage';
+  const tab = tabs.some(([key]) => key === params.get('tab')) ? params.get('tab')! :
+    detail?.profiles.some((p) => p.isActive && p.executionPlan) ? 'execution' : 'lineage';
   const toast = useToast();
   const reload = useCallback(() => {
     api<CellLineDetailDto>(`/api/cell-lines/${id}`)
@@ -131,9 +135,13 @@ export function CellLineDetail({ id }: { id: string }) {
             <strong>{detail.lots.reduce((sum, l) => sum + l.vialsRemaining, 0)}</strong>
             <span>보관 바이알</span>
           </div>
+          <button className={btnCls} onClick={() => { setConfirm(''); setDeleting(true); }}>
+            관리 · 세포주 삭제
+          </button>
         </div>
       </header>
       {detail.line.caution && <div className="rounded-lg bg-danger-soft p-3 text-danger">{detail.line.caution}</div>}
+      <CurrentCultureSummary key={detail.line.id} detail={detail} />
       <nav className="cell-detail-tabs" aria-label="세포주 보기">
         {tabs.map(([key, label]) => (
           <button key={key} aria-current={tab === key ? 'page' : undefined} onClick={() => selectTab(key)}>
@@ -141,15 +149,13 @@ export function CellLineDetail({ id }: { id: string }) {
           </button>
         ))}
       </nav>
+      {tab === 'execution' && <CultureWorkbench detail={detail} onChanged={reload} />}
       {tab === 'info' && (
         <>
           <CellLineInfoForm value={form} onChange={setForm} />
           <div className="flex gap-2">
             <button className={primaryBtnCls} disabled={busy} onClick={save}>
               저장
-            </button>
-            <button className={`${btnCls} !text-danger`} onClick={() => setDeleting(true)}>
-              세포주 삭제
             </button>
             {form.providerUrl && (
               <button className={btnCls} onClick={() => window.open(form.providerUrl!, '_blank')}>
@@ -191,19 +197,19 @@ export function CellLineDetail({ id }: { id: string }) {
           onChanged={reload}
         />
       )}{' '}
-      {tab === 'sop' && <SopPanel line={detail.line} onChanged={reload} />}{' '}
+      {tab === 'sop' && <SopPanel line={detail.line} profiles={detail.profiles} onChanged={reload} />}{' '}
       {deleting && (
         <Dialog
           title="세포주 삭제"
           onClose={() => setDeleting(false)}
           footer={
-            <button className={dangerBtnCls} disabled={confirm !== detail.line.name || busy} onClick={remove}>
+            <button className={solidDangerBtnCls} disabled={confirm !== detail.line.name || busy} onClick={remove}>
               영구 삭제
             </button>
           }
         >
           <p className="mb-3 text-sm">
-            모든 배양 조건과 계보·기록이 함께 삭제됩니다. 확인하려면 세포주 이름을 입력하세요: {detail.line.name}
+            이 세포주의 배양 조건·바이알 재고·배양 계보·관찰 기록·문헌 비교 보고서가 영구 삭제됩니다. 별도 저장된 Bradford 정량, Western 실험과 프로토콜은 삭제되지 않습니다. 정량 데이터에 남은 배양 연결은 더 이상 열 수 없습니다. 확인하려면 세포주 이름을 입력하세요: {detail.line.name}
           </p>
           <input className={inputCls} value={confirm} onChange={(e) => setConfirm(e.target.value)} aria-label="삭제할 세포주 이름" />
         </Dialog>

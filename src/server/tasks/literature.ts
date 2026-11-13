@@ -3,7 +3,7 @@ import { CULTURE_FIELDS } from '../../shared/culture';
 import { htmlParagraphs, jatsParagraphs, selectEvidence } from '../../shared/evidence';
 import type { LiteratureReport, ReportSource } from '../../shared/literature';
 import type { MadeBy } from '../../shared/models';
-import { validateCultureExtraction } from '../../shared/literature';
+import { sourceContextOf, validateCultureExtraction, validateSourceContext } from '../../shared/literature';
 import { getLineRow } from '../cell-lines';
 import { db, now, parseJsonColumn } from '../db';
 import { HttpError } from '../http-error';
@@ -130,14 +130,21 @@ export function startLiterature(lineId: string, input: LiteratureInput): string 
                 signal: ctx.signal,
               });
               try {
-                source.fields = validateCultureExtraction(parseJsonLoose(result.text), ids);
+                const parsed = parseJsonLoose(result.text);
+                source.fields = validateCultureExtraction(parsed, ids);
+                source.context = validateSourceContext(parsed, ids);
                 by ??= result.by;
                 break;
               } catch {
                 if (attempt) throw new Error('추출 결과 형식이 올바르지 않습니다');
               }
             }
-            const used = new Set(Object.values(source.fields!).flatMap((f) => f.evidenceIds));
+            const context = sourceContextOf(source);
+            const used = new Set([
+              ...Object.values(source.fields!).flatMap((f) => [...f.evidenceIds, ...(f.purposeEvidenceIds ?? [])]),
+              ...context.targetCell.evidenceIds,
+              ...context.supplyOrigin.evidenceIds,
+            ]);
             source.evidence = Object.fromEntries(
               evidence.filter((e) => used.has(e.id)).map((e) => [e.id, { heading: e.heading, text: e.text }]),
             );

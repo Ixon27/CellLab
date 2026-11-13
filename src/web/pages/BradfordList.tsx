@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'wouter';
+import { ArrowUpRight, Plus, TestTube } from 'lucide-react';
 import { STANDARD_PRESETS } from '../../shared/bradford';
 import { api } from '../api';
 import { Dialog, btnCls, inputCls, primaryBtnCls } from '../components/Dialog';
 import { useToast } from '../components/Toast';
+import { PageHeader } from '../components/Workbench';
 
 interface Item {
   id: string;
@@ -13,7 +15,7 @@ interface Item {
   r2: number | null;
 }
 export function BradfordList() {
-  const [items, setItems] = useState<Item[]>([]),
+  const [items, setItems] = useState<Item[] | null>(null),
     [open, setOpen] = useState(false),
     [title, setTitle] = useState(''),
     [date, setDate] = useState(new Date().toISOString().slice(0, 10)),
@@ -37,51 +39,53 @@ export function BradfordList() {
       setBusy(false);
     }
   }
+  const start = () => {
+    setTitle(`정량 ${date}`);
+    setOpen(true);
+  };
+  const newButton = (
+    <button className={primaryBtnCls} onClick={start}>
+      <Plus size={14} />새 정량 실험
+    </button>
+  );
   return (
-    <div className="mx-auto max-w-6xl space-y-5 p-6">
-      <header className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold">단백질 정량</h1>
-          <p className="text-sm text-fg-muted">Bradford · BCA 표준곡선과 시료 농도를 관리합니다.</p>
+    <div className="workbench-page">
+      <PageHeader eyebrow="Protein assay" title="단백질 정량" note="Bradford · BCA 표준곡선으로 시료 농도를 구하고 Western 로딩으로 넘깁니다." actions={newButton} />
+      {items && items.length > 0 && (
+        <div className="workbench-panel divide-y divide-line">
+          {items.map((item) => (
+            <Link key={item.id} href={`/bradford/${item.id}`} className="group flex items-center gap-4 px-4 py-3.5 hover:bg-hover">
+              <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-line text-fg-muted">
+                <TestTube size={17} strokeWidth={1.5} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <h2 className="truncate text-[14px] font-semibold">{item.title}</h2>
+                <p className="mt-0.5 text-[12px] tabular-nums text-fg-muted">{item.performed_at.slice(0, 10)}</p>
+              </div>
+              <div className="flex shrink-0 gap-5 text-right text-[12px] tabular-nums">
+                <div>
+                  <span className="text-fg-dim">시료</span>
+                  <span className="ml-1.5 font-medium">{item.sampleCount}</span>
+                </div>
+                <div className="w-[76px]">
+                  <span className="text-fg-dim">R²</span>
+                  <span className={`ml-1.5 font-medium ${item.r2 === null ? 'text-fg-dim' : item.r2 >= 0.98 ? 'text-success' : 'text-warning'}`}>
+                    {item.r2?.toFixed(4) ?? '—'}
+                  </span>
+                </div>
+              </div>
+              <ArrowUpRight size={14} className="shrink-0 text-fg-dim group-hover:text-fg" aria-hidden />
+            </Link>
+          ))}
         </div>
-        <button
-          className={primaryBtnCls}
-          onClick={() => {
-            setTitle(`정량 ${date}`);
-            setOpen(true);
-          }}
-        >
-          새 정량 실험
-        </button>
-      </header>
-      {!items.length ? (
-        <p className="rounded-xl border border-line p-8 text-fg-muted">정량 실험을 만들어 표준과 시료 흡광도를 입력하세요.</p>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr>
-                <th>제목</th>
-                <th>실험일</th>
-                <th>시료 수</th>
-                <th>R²</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((item) => (
-                <tr key={item.id} className="border-t border-line">
-                  <td className="py-3">
-                    <Link href={`/bradford/${item.id}`} className="text-accent">
-                      {item.title}
-                    </Link>
-                  </td>
-                  <td>{item.performed_at.slice(0, 10)}</td>
-                  <td>{item.sampleCount}</td>
-                  <td>{item.r2?.toFixed(4) ?? '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      )}
+      {!items && <p className="text-[13px] text-fg-muted">정량 실험을 불러오는 중…</p>}
+      {items?.length === 0 && (
+        <div className="workbench-panel px-8 py-14 text-center">
+          <TestTube size={24} strokeWidth={1.3} className="mx-auto mb-3 text-fg-dim" />
+          <p className="font-medium">첫 정량 실험을 만드세요</p>
+          <p className="mb-5 mt-1 text-[12px] text-fg-muted">플레이트 리더 엑셀 파일을 올리면 96칸 측정값이 바로 들어갑니다.</p>
+          {newButton}
         </div>
       )}
       {open && (
@@ -89,23 +93,28 @@ export function BradfordList() {
           title="정량 실험 만들기"
           onClose={() => setOpen(false)}
           footer={
-            <button disabled={busy || !title.trim()} className={primaryBtnCls} onClick={create}>
-              만들기
-            </button>
+            <>
+              <button className={btnCls} onClick={() => setOpen(false)}>
+                취소
+              </button>
+              <button disabled={busy || !title.trim()} className={primaryBtnCls} onClick={create}>
+                만들기
+              </button>
+            </>
           }
         >
           <div className="space-y-3">
             <label className="block">
-              제목
-              <input className={`${inputCls} w-full`} value={title} onChange={(e) => setTitle(e.target.value)} />
+              <span className="mb-1 block text-[12px] font-medium text-fg-muted">제목</span>
+              <input autoFocus className={inputCls} value={title} onChange={(e) => setTitle(e.target.value)} />
             </label>
             <label className="block">
-              실험일
-              <input className={`${inputCls} w-full`} type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+              <span className="mb-1 block text-[12px] font-medium text-fg-muted">실험일</span>
+              <input className={`${inputCls} w-40`} type="date" value={date} onChange={(e) => setDate(e.target.value)} />
             </label>
             <label className="block">
-              표준 농도
-              <select className={`${inputCls} w-full`} value={preset} onChange={(e) => setPreset(e.target.value)}>
+              <span className="mb-1 block text-[12px] font-medium text-fg-muted">표준 농도</span>
+              <select className={inputCls} value={preset} onChange={(e) => setPreset(e.target.value)}>
                 {STANDARD_PRESETS.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.label}
@@ -113,9 +122,6 @@ export function BradfordList() {
                 ))}
               </select>
             </label>
-            <button className={btnCls} onClick={() => setOpen(false)}>
-              취소
-            </button>
           </div>
         </Dialog>
       )}

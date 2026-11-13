@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { Link } from 'wouter';
 import { nanoid } from 'nanoid';
+import { ArrowLeft, ChevronRight, Info, Plus, Trash2, TriangleAlert } from 'lucide-react';
 import { antibodyMix, defaultLanes, eclMix, gelRecipe, loadingPlan, westernAutoRecord, westernMarkdown } from '../../shared/western';
 import type { GelRow, WesternData, WesternRunView } from '../../shared/western';
 import {
@@ -15,46 +16,57 @@ import {
 } from '../../shared/western-defaults';
 import type { BradfordData, BradfordResult } from '../../shared/bradford';
 import { api } from '../api';
-import { btnCls, Dialog, Field, inputCls, primaryBtnCls, smallBtnCls } from '../components/Dialog';
-import { Markdown } from '../components/Markdown';
+import { btnCls, Dialog, Field, iconBtnCls, inputCls, primaryBtnCls, smallBtnCls, smallGhostBtnCls, smallIconBtnCls } from '../components/Dialog';
+import { ProtocolPreview } from '../components/ProtocolPreview';
 import { OptionCombobox } from '../components/OptionCombobox';
 import { StepTimer } from '../components/StepTimer';
 import { useCopy, useToast } from '../components/Toast';
+import { SaveStatus, StepRail, StepSection } from '../components/Workbench';
+import type { SaveState, WorkflowStep } from '../components/Workbench';
+import './western.css';
 
 interface Protocol {
   id: string;
   title: string;
   body_md?: string;
-  bodyMd?: string;
+  source_file?: string | null;
 }
-function Section({ title, children }: { title: string; children: ReactNode }) {
+/** Label above a content-sized control; `unit` trails the control. */
+function Fld({ label, unit, children }: { label: string; unit?: string; children: ReactNode }) {
   return (
-    <section className="space-y-4 rounded-xl border border-line bg-raised p-5">
-      <h2 className="text-base font-semibold">{title}</h2>
-      {children}
-    </section>
+    <label className="wr-field">
+      <span>{label}</span>
+      <span className="wr-ctl">
+        {children}
+        {unit && <em>{unit}</em>}
+      </span>
+    </label>
   );
 }
 function RecipeTable({ rows }: { rows: GelRow[] }) {
   return (
-    <table className="w-full text-left text-sm">
-      <thead>
-        <tr>
-          <th>시약</th>
-          <th>원문 µL</th>
-          <th>현장 µL</th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((r) => (
-          <tr key={r.reagent} className="border-t border-line">
-            <td className="py-2">{r.reagent}</td>
-            <td>{r.originalUl}</td>
-            <td className={r.reagent === 'TEMED' ? 'font-bold text-accent' : ''}>{r.fieldUl}</td>
+    <div className="overflow-x-auto">
+      <table className="pr-table wr-recipe">
+        <thead>
+          <tr>
+            <th>시약</th>
+            <th className="num">원문 µL</th>
+            <th className="num">현장 µL</th>
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.reagent}>
+              <td>{r.reagent}</td>
+              <td className="num orig">{r.originalUl}</td>
+              <td className="num field" data-diff={r.fieldUl !== r.originalUl || undefined}>
+                {r.fieldUl}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 export function WesternRun({ id }: { id: string }) {
@@ -65,7 +77,8 @@ export function WesternRun({ id }: { id: string }) {
     [protocol, setProtocol] = useState<Protocol | null>(null),
     [drawer, setDrawer] = useState(false),
     [importOpen, setImportOpen] = useState(false),
-    [finished, setFinished] = useState<string[]>([]);
+    [finished, setFinished] = useState<string[]>([]),
+    [memos, setMemos] = useState<string[]>([]);
   const revision = useRef(0),
     saved = useRef(0),
     latest = useRef<WesternRunView | null>(null),
@@ -198,15 +211,57 @@ export function WesternRun({ id }: { id: string }) {
     batches: d.gel.batches,
     temedMultiplier: d.gel.temedMultiplier,
   });
+  const laneKind = (lane: string) => {
+    const t = lane.trim();
+    return !t || t === '(빈 칸)' ? 'empty' : t === 'Ladder' ? 'ladder' : 'sample';
+  };
+  const sampleNames = new Set(d.samples.map((s) => s.name));
+  const placed = d.lanes.filter((l) => laneKind(l) === 'sample').length;
+  const plans = d.samples.map((s) => loadingPlan(s.concUgPerUl, d.loading));
+  const primaryCount = d.antibodies.filter((a) => a.kind === 'primary').length;
+  const stepsDone = WESTERN_STEPS.filter((s) => d.steps[s.id].done).length;
+  const saveState: SaveState =
+    saving === '저장 중…' ? 'saving' : saving === '저장 실패' ? 'failed' : saving === '미저장' ? 'pending' : 'saved';
+  const bufferMaster = (d.samples.length * d.loading.finalUl) / d.loading.sampleBufferX;
+  const steps: WorkflowStep[] = [
+    { id: 'wr-gel', title: '겔 조성', done: d.steps['1-5'].done, summary: `${d.gel.separatingPct}% · ${d.gel.separatingScale} mL` },
+    {
+      id: 'wr-samples',
+      title: '시료·로딩',
+      done: d.samples.length > 0 && plans.every((p) => p?.ok),
+      summary: `시료 ${d.samples.length}개`,
+    },
+    {
+      id: 'wr-lanes',
+      title: 'Lane map',
+      done: d.samples.length > 0 && d.samples.every((s) => d.lanes.includes(s.name)),
+      summary: `${d.wells}웰 · 시료 ${placed}`,
+    },
+    {
+      id: 'wr-antibodies',
+      title: '항체',
+      done: d.antibodies.length > 0 && d.antibodies.every((a) => a.end),
+      summary: `1차 ${primaryCount} · 2차 ${d.antibodies.length - primaryCount}`,
+    },
+    { id: 'wr-ecl', title: 'ECL', done: d.steps['3-4'].done, summary: `막 ${d.membranes}장 · ${ecl.total} µL` },
+    {
+      id: 'wr-checklist',
+      title: '단계 체크리스트',
+      done: stepsDone === WESTERN_STEPS.length,
+      summary: `${stepsDone}/${WESTERN_STEPS.length}`,
+    },
+  ];
+  const localTime = (iso: string | null) =>
+    iso ? new Date(Date.parse(iso) - new Date(iso).getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '';
   return (
-    <div className="mx-auto max-w-6xl space-y-5 p-6">
-      <Link href="/western" className="text-sm text-fg-muted">
-        ← 실험 목록
-      </Link>
-      <header className="space-y-3">
+    <div className="workbench-page">
+      <header className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <Link href="/western" className={iconBtnCls} aria-label="실험 목록" title="실험 목록">
+          <ArrowLeft size={16} />
+        </Link>
         <input
           aria-label="실험 제목"
-          className={`${inputCls} text-lg font-semibold`}
+          className="workbench-title"
           value={view.run.title}
           onChange={(e) =>
             change((v) => {
@@ -214,53 +269,48 @@ export function WesternRun({ id }: { id: string }) {
             })
           }
         />
-        <div className="flex flex-wrap items-center gap-3">
-          <label>
-            상태{' '}
-            <select
-              className={inputCls}
-              value={view.run.status}
-              onChange={(e) =>
-                change((v) => {
-                  v.run.status = e.target.value as WesternRunView['run']['status'];
-                })
-              }
-            >
-              <option value="planned">계획</option>
-              <option value="in_progress">진행 중</option>
-              <option value="done">완료</option>
-            </select>
-          </label>
-          <label>
-            실험일{' '}
-            <input
-              type="date"
-              className={inputCls}
-              value={view.run.performed_at.slice(0, 10)}
-              onChange={(e) => {
-                if (e.target.value)
-                  change((v) => {
-                    v.run.performed_at = `${e.target.value}T00:00:00.000Z`;
-                  });
-              }}
-            />
-          </label>
-          <button className={btnCls} onClick={() => setDrawer(true)}>
-            프로토콜 보기
-          </button>
-          <button className={btnCls} onClick={() => copy(westernMarkdown(view))}>
-            마크다운 복사
-          </button>
-          <span aria-live="polite" className="text-xs text-fg-muted">
-            {saving}
-          </span>
-        </div>
+        <SaveStatus state={saveState} />
+        <select
+          aria-label="상태"
+          className={`${inputCls} w-28`}
+          value={view.run.status}
+          onChange={(e) =>
+            change((v) => {
+              v.run.status = e.target.value as WesternRunView['run']['status'];
+            })
+          }
+        >
+          <option value="planned">계획</option>
+          <option value="in_progress">진행 중</option>
+          <option value="done">완료</option>
+        </select>
+        <input
+          aria-label="실험일"
+          type="date"
+          className={`${inputCls} w-[140px]`}
+          value={view.run.performed_at.slice(0, 10)}
+          onChange={(e) => {
+            if (e.target.value)
+              change((v) => {
+                v.run.performed_at = `${e.target.value}T00:00:00.000Z`;
+              });
+          }}
+        />
+        <button className={btnCls} onClick={() => setDrawer(true)}>
+          프로토콜 보기
+        </button>
+        <button className={btnCls} onClick={() => copy(westernMarkdown(view))}>
+          마크다운 복사
+        </button>
       </header>
-      <Section title="1. 겔 조성">
-        <div className="grid gap-3 sm:grid-cols-3">
-          <Field label="Separating 농도 (%)">
+
+      <StepRail steps={steps} label="Western 단계" />
+
+      <StepSection id="wr-gel" n={1} title="겔 조성">
+        <div className="wr-row">
+          <Fld label="Separating 농도" unit="%">
             <select
-              className={inputCls}
+              className={`${inputCls} w-20`}
               value={d.gel.separatingPct}
               onChange={(e) =>
                 data((x) => {
@@ -272,10 +322,10 @@ export function WesternRun({ id }: { id: string }) {
                 <option key={n}>{n}</option>
               ))}
             </select>
-          </Field>
-          <Field label="Separating 규모 (mL)">
+          </Fld>
+          <Fld label="Separating 규모" unit="mL">
             <select
-              className={inputCls}
+              className={`${inputCls} w-20`}
               value={d.gel.separatingScale}
               onChange={(e) =>
                 data((x) => {
@@ -287,10 +337,10 @@ export function WesternRun({ id }: { id: string }) {
                 <option key={n}>{n}</option>
               ))}
             </select>
-          </Field>
-          <Field label="Stacking 규모 (mL)">
+          </Fld>
+          <Fld label="Stacking 규모" unit="mL">
             <select
-              className={inputCls}
+              className={`${inputCls} w-20`}
               value={d.gel.stackingScale}
               onChange={(e) =>
                 data((x) => {
@@ -302,13 +352,13 @@ export function WesternRun({ id }: { id: string }) {
                 <option key={n}>{n}</option>
               ))}
             </select>
-          </Field>
-          <Field label="배합 횟수 (1–10)">
+          </Fld>
+          <Fld label="배합 횟수 (1–10)" unit="회">
             <input
               type="number"
               min="1"
               max="10"
-              className={inputCls}
+              className={`${inputCls} w-20`}
               value={d.gel.batches}
               onChange={(e) => {
                 const n = Number(e.target.value);
@@ -318,13 +368,13 @@ export function WesternRun({ id }: { id: string }) {
                   });
               }}
             />
-          </Field>
-          <Field label="TEMED 배수">
+          </Fld>
+          <Fld label="TEMED 배수" unit="배">
             <input
               type="number"
               min="0.01"
               step="0.5"
-              className={inputCls}
+              className={`${inputCls} w-20`}
               value={d.gel.temedMultiplier}
               onChange={(e) => {
                 const n = Number(e.target.value);
@@ -334,199 +384,270 @@ export function WesternRun({ id }: { id: string }) {
                   });
               }}
             />
-          </Field>
+          </Fld>
         </div>
-        <div className="grid gap-6 md:grid-cols-2">
-          <div>
-            <h3>Separating gel</h3>
+        <div className="wr-grid2 mt-5">
+          <div className="min-w-0">
+            <h3 className="wr-sub">Separating gel</h3>
             <RecipeTable rows={separating.rows} />
           </div>
-          <div>
-            <h3>Stacking gel</h3>
+          <div className="min-w-0">
+            <h3 className="wr-sub">Stacking gel</h3>
             <RecipeTable rows={stacking.rows} />
           </div>
         </div>
-        {d.gel.separatingPct === 8 && <p className="text-warning">{SEPARATING_PCT_NOTES[8]}</p>}
-        <p className="text-sm text-fg-muted">{STACKING_NOTE}</p>
-        <p className="rounded-lg bg-warning-soft p-3 text-sm text-warning">
-          APS를 먼저 넣고 혼합한 뒤, TEMED를 마지막에 넣고 즉시 붓는다. 현장 TEMED 값은 이미 배수가 반영되어 있다.
-        </p>
-        <details>
-          <summary className="cursor-pointer">농도별 분리 범위 참고</summary>
-          <table className="mt-2 text-sm">
-            <thead>
-              <tr>
-                <th>농도 (%)</th>
-                <th>분리 범위 (kDa)</th>
-              </tr>
-            </thead>
-            <tbody>
-              {ACRYLAMIDE_RANGES.map((r) => (
-                <tr key={r.pct}>
-                  <td className="pr-8">{r.pct}</td>
-                  <td>{r.range}</td>
+        <div className="wr-notes">
+          {d.gel.separatingPct === 8 && (
+            <p className="wr-note">
+              <TriangleAlert size={13} aria-hidden />
+              {SEPARATING_PCT_NOTES[8]}
+            </p>
+          )}
+          <p className="wr-note" data-quiet>
+            <Info size={13} aria-hidden />
+            {STACKING_NOTE}
+          </p>
+          <p className="wr-note">
+            <TriangleAlert size={13} aria-hidden />
+            APS를 먼저 넣고 혼합한 뒤, TEMED를 마지막에 넣고 즉시 붓는다. 현장 TEMED 값은 이미 배수가 반영되어 있다.
+          </p>
+        </div>
+        <details className="wr-fold">
+          <summary>
+            <ChevronRight size={13} aria-hidden /> 농도별 분리 범위 참고
+          </summary>
+          <div className="wr-fold-body">
+            <table className="pr-table">
+              <thead>
+                <tr>
+                  <th className="num">농도 (%)</th>
+                  <th>분리 범위 (kDa)</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </details>
-      </Section>
-      <Section title="2. 시료·로딩">
-        <div className="flex flex-wrap gap-2">
-          <button
-            className={btnCls}
-            disabled={d.samples.length >= 30}
-            onClick={() =>
-              data((x) => {
-                x.samples.push({ id: nanoid(12), name: `시료 ${x.samples.length + 1}`, concUgPerUl: null, source: null });
-              })
-            }
-          >
-            시료 추가
-          </button>
-          <button className={btnCls} onClick={() => setImportOpen(true)}>
-            Bradford에서 가져오기
-          </button>
-        </div>
-        <Field label="로딩 프리셋">
-          <select
-            className={inputCls}
-            value=""
-            onChange={(e) => {
-              const p = LOADING_PRESETS.find((p) => p.id === e.target.value);
-              if (p)
-                data((x) => {
-                  x.loading = { proteinUg: p.proteinUg, finalUl: p.finalUl, sampleBufferX: p.sampleBufferX };
-                });
-            }}
-          >
-            <option value="">프리셋 선택 (선택 시 현재 조건 변경)</option>
-            {LOADING_PRESETS.map((p) => (
-              <option value={p.id} key={p.id}>
-                {p.label}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <div className="grid gap-3 sm:grid-cols-3">
-          {(
-            [
-              ['proteinUg', '단백질 (µg)'],
-              ['finalUl', '최종 부피 (µL)'],
-              ['sampleBufferX', 'Buffer X'],
-            ] as const
-          ).map(([key, label]) => (
-            <Field key={key} label={label}>
-              <input
-                type="number"
-                min={key === 'sampleBufferX' ? 1.01 : 0.001}
-                step="any"
-                className={inputCls}
-                value={d.loading[key]}
-                onChange={(e) => {
-                  const n = Number(e.target.value);
-                  if (n > (key === 'sampleBufferX' ? 1 : 0))
-                    data((x) => {
-                      x.loading[key] = n;
-                    });
-                }}
-              />
-            </Field>
-          ))}
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr>
-                {['시료명', '원액 µg/µL', '단백질 µL', 'PRO-PREP µL', `${d.loading.sampleBufferX}X buffer µL`, '합계 µL', ''].map(
-                  (s, i) => (
-                    <th key={i} className="px-2 pb-2">
-                      {s}
-                    </th>
-                  ),
-                )}
-              </tr>
-            </thead>
-            <tbody>
-              {d.samples.map((s, i) => {
-                const p = loadingPlan(s.concUgPerUl, d.loading);
-                return (
-                  <tr key={s.id} className={p && !p.ok ? 'bg-danger-soft text-danger' : 'border-t border-line'}>
-                    <td className="min-w-40 p-2">
-                      <input
-                        aria-label="시료명"
-                        className={inputCls}
-                        value={s.name}
-                        onChange={(e) =>
-                          data((x) => {
-                            x.samples[i].name = e.target.value;
-                          })
-                        }
-                      />
-                      {s.source && <span className="text-xs text-fg-muted">Bradford 연결</span>}
-                    </td>
-                    <td className="min-w-28 p-2">
-                      <input
-                        aria-label="원액 농도"
-                        type="number"
-                        min="0"
-                        step="any"
-                        className={inputCls}
-                        value={s.concUgPerUl ?? ''}
-                        onChange={(e) =>
-                          data((x) => {
-                            x.samples[i].concUgPerUl = e.target.value === '' ? null : Number(e.target.value);
-                          })
-                        }
-                      />
-                    </td>
-                    <td className="p-2">{p?.sampleUl.toFixed(1) ?? '—'}</td>
-                    <td className="p-2">{p?.diluentUl.toFixed(1) ?? '—'}</td>
-                    <td className="p-2">{p?.bufferUl.toFixed(1) ?? '—'}</td>
-                    <td className="p-2">
-                      {p?.finalUl.toFixed(1) ?? '—'}
-                      {p && !p.ok && <p className="text-xs">농축 또는 로딩 조건 조정 필요</p>}
-                    </td>
-                    <td>
-                      <button
-                        className={smallBtnCls}
-                        onClick={() =>
-                          data((x) => {
-                            x.samples.splice(i, 1);
-                          })
-                        }
-                      >
-                        삭제
-                      </button>
-                    </td>
+              </thead>
+              <tbody>
+                {ACRYLAMIDE_RANGES.map((r) => (
+                  <tr key={r.pct}>
+                    <td className="num">{r.pct}</td>
+                    <td>{r.range}</td>
                   </tr>
-                );
-              })}
-            </tbody>
-            <tfoot>
-              <tr>
-                <td colSpan={7} className="pt-3">
-                  Buffer 마스터 합계: {((d.samples.length * d.loading.finalUl) / d.loading.sampleBufferX).toFixed(1)} µL · 10% 여유분 포함{' '}
-                  {(((d.samples.length * d.loading.finalUl) / d.loading.sampleBufferX) * 1.1).toFixed(1)} µL
-                </td>
-              </tr>
-            </tfoot>
-          </table>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
+      </StepSection>
+
+      <StepSection
+        id="wr-samples"
+        n={2}
+        title="시료·로딩"
+        actions={
+          <>
+            <button className={btnCls} onClick={() => setImportOpen(true)}>
+              Bradford에서 가져오기
+            </button>
+            <button
+              className={btnCls}
+              disabled={d.samples.length >= 30}
+              onClick={() =>
+                data((x) => {
+                  x.samples.push({ id: nanoid(12), name: `시료 ${x.samples.length + 1}`, concUgPerUl: null, source: null });
+                })
+              }
+            >
+              <Plus size={13} aria-hidden /> 시료 추가
+            </button>
+          </>
+        }
+      >
+        <div className="wr-row">
+          <Fld label="단백질" unit="µg">
+            <input
+              type="number"
+              min="0.001"
+              step="any"
+              className={`${inputCls} w-24`}
+              value={d.loading.proteinUg}
+              onChange={(e) => {
+                const n = Number(e.target.value);
+                if (n > 0)
+                  data((x) => {
+                    x.loading.proteinUg = n;
+                  });
+              }}
+            />
+          </Fld>
+          <Fld label="최종 부피" unit="µL">
+            <input
+              type="number"
+              min="0.001"
+              step="any"
+              className={`${inputCls} w-24`}
+              value={d.loading.finalUl}
+              onChange={(e) => {
+                const n = Number(e.target.value);
+                if (n > 0)
+                  data((x) => {
+                    x.loading.finalUl = n;
+                  });
+              }}
+            />
+          </Fld>
+          <Fld label="Sample buffer" unit="X">
+            <input
+              type="number"
+              min="1.01"
+              step="any"
+              className={`${inputCls} w-20`}
+              value={d.loading.sampleBufferX}
+              onChange={(e) => {
+                const n = Number(e.target.value);
+                if (n > 1)
+                  data((x) => {
+                    x.loading.sampleBufferX = n;
+                  });
+              }}
+            />
+          </Fld>
+          <Fld label="로딩 프리셋">
+            <select
+              className={`${inputCls} w-64`}
+              value=""
+              onChange={(e) => {
+                const p = LOADING_PRESETS.find((p) => p.id === e.target.value);
+                if (p)
+                  data((x) => {
+                    x.loading = { proteinUg: p.proteinUg, finalUl: p.finalUl, sampleBufferX: p.sampleBufferX };
+                  });
+              }}
+            >
+              <option value="">프리셋 선택 (선택 시 현재 조건 변경)</option>
+              {LOADING_PRESETS.map((p) => (
+                <option value={p.id} key={p.id}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+          </Fld>
         </div>
-        <p className="text-sm text-warning">
+        {d.samples.length === 0 ? (
+          <div className="workbench-empty mt-4">시료가 없습니다. 시료를 추가하거나 Bradford 정량 결과를 가져오세요.</div>
+        ) : (
+          <div className="mt-4 overflow-x-auto">
+            <table className="pr-table">
+              <thead>
+                <tr>
+                  <th>시료명</th>
+                  <th className="num">원액 µg/µL</th>
+                  <th className="num">단백질 µL</th>
+                  <th className="num">PRO-PREP µL</th>
+                  <th className="num">{d.loading.sampleBufferX}X buffer µL</th>
+                  <th className="num">합계 µL</th>
+                  <th aria-label="삭제" />
+                </tr>
+              </thead>
+              <tbody>
+                {d.samples.map((s, i) => {
+                  const p = plans[i];
+                  return (
+                    <tr key={s.id} className={p && !p.ok ? 'wr-bad' : undefined}>
+                      <td>
+                        <input
+                          aria-label="시료명"
+                          className={`${inputCls} w-44`}
+                          value={s.name}
+                          onChange={(e) =>
+                            data((x) => {
+                              x.samples[i].name = e.target.value;
+                            })
+                          }
+                        />
+                        {s.source && <span className="wr-tag">Bradford 연결</span>}
+                      </td>
+                      <td className="num">
+                        <input
+                          aria-label="원액 농도"
+                          type="number"
+                          min="0"
+                          step="any"
+                          className={`${inputCls} w-24 text-right`}
+                          value={s.concUgPerUl ?? ''}
+                          onChange={(e) =>
+                            data((x) => {
+                              x.samples[i].concUgPerUl = e.target.value === '' ? null : Number(e.target.value);
+                            })
+                          }
+                        />
+                      </td>
+                      <td className="num">{p?.ok ? p.sampleUl.toFixed(1) : '—'}</td>
+                      <td className="num">{p?.ok ? p.diluentUl.toFixed(1) : '—'}</td>
+                      <td className="num">{p?.ok ? p.bufferUl.toFixed(1) : '—'}</td>
+                      <td className="num">
+                        {p?.finalUl.toFixed(1) ?? '—'}
+                        {p && !p.ok && <div className="text-[11.5px]">농축 또는 로딩 조건 조정 필요</div>}
+                      </td>
+                      <td>
+                        <button
+                          className={smallIconBtnCls}
+                          aria-label={`${s.name} 삭제`}
+                          title="시료 삭제"
+                          onClick={() =>
+                            data((x) => {
+                              x.samples.splice(i, 1);
+                            })
+                          }
+                        >
+                          <Trash2 size={13} aria-hidden />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            <div className="wr-total">
+              <span>
+                Buffer 마스터 합계 {bufferMaster.toFixed(1)} µL · 10% 여유분 포함 {(bufferMaster * 1.1).toFixed(1)} µL
+              </span>
+            </div>
+          </div>
+        )}
+        <p className="wr-note mt-3">
+          <TriangleAlert size={13} aria-hidden />
           원액 농도가 {Number(minimum.toFixed(3))} µg/µL 미만이면 농축 또는 로딩 조건 조정이 필요합니다.
         </p>
-      </Section>
-      <Section title="3. Lane map">
-        <div className="flex gap-3">
-          <label>
-            웰 수{' '}
-            <select
-              className={inputCls}
-              value={d.wells}
-              onChange={(e) =>
+      </StepSection>
+
+      <StepSection
+        id="wr-lanes"
+        n={3}
+        title="Lane map"
+        actions={
+          <>
+            <label className="flex items-center gap-1.5 text-[12px] text-fg-muted">
+              웰 수
+              <select
+                className={`${inputCls} w-20`}
+                value={d.wells}
+                onChange={(e) =>
+                  data((x) => {
+                    x.wells = Number(e.target.value);
+                    x.lanes = defaultLanes(
+                      x.samples.map((s) => s.name),
+                      x.wells,
+                    );
+                  })
+                }
+              >
+                {[10, 12, 15].map((n) => (
+                  <option key={n}>{n}</option>
+                ))}
+              </select>
+            </label>
+            <button
+              className={btnCls}
+              onClick={() =>
                 data((x) => {
-                  x.wells = Number(e.target.value);
                   x.lanes = defaultLanes(
                     x.samples.map((s) => s.name),
                     x.wells,
@@ -534,116 +655,124 @@ export function WesternRun({ id }: { id: string }) {
                 })
               }
             >
-              {[10, 12, 15].map((n) => (
-                <option key={n}>{n}</option>
-              ))}
-            </select>
-          </label>
-          <button
-            className={btnCls}
-            onClick={() =>
-              data((x) => {
-                x.lanes = defaultLanes(
-                  x.samples.map((s) => s.name),
-                  x.wells,
-                );
-              })
-            }
-          >
-            기본 배치로 초기화
-          </button>
+              기본 배치로 초기화
+            </button>
+          </>
+        }
+      >
+        <div className="wr-gel-scroll">
+          <div className="wr-gel" style={{ '--wells': d.lanes.length } as CSSProperties} role="group" aria-label="겔 레인 배치">
+            {d.lanes.map((lane, i) => (
+              <label key={i} className="wr-lane" data-kind={laneKind(lane)}>
+                <span className="wr-lane-n">{i + 1}</span>
+                <span className="wr-notch" aria-hidden />
+                <input
+                  aria-label={`레인 ${i + 1}`}
+                  title={lane}
+                  list={`lane-options-${id}`}
+                  className={`${inputCls} wr-lane-in`}
+                  value={lane}
+                  onChange={(e) =>
+                    data((x) => {
+                      x.lanes[i] = e.target.value;
+                    })
+                  }
+                />
+              </label>
+            ))}
+          </div>
         </div>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
-          {d.lanes.map((lane, i) => (
-            <Field key={i} label={`레인 ${i + 1}`}>
-              <input
-                list={`lane-options-${id}`}
-                className={inputCls}
-                value={lane}
-                onChange={(e) =>
-                  data((x) => {
-                    x.lanes[i] = e.target.value;
-                  })
-                }
-              />
-            </Field>
-          ))}
-        </div>
+        <p className="wr-legend">
+          <span>시료 {placed}</span>
+          <span>Ladder {d.lanes.filter((l) => laneKind(l) === 'ladder').length}</span>
+          <span>빈 칸 {d.lanes.filter((l) => laneKind(l) === 'empty').length}</span>
+          <span>레인 칸에 시료명 또는 Ladder를 입력하거나 목록에서 고릅니다.</span>
+        </p>
         <datalist id={`lane-options-${id}`}>
-          {['(빈 칸)', 'Ladder', ...new Set(d.samples.map((s) => s.name))].map((s) => (
+          {['(빈 칸)', 'Ladder', ...sampleNames].map((s) => (
             <option key={s} value={s} />
           ))}
         </datalist>
-      </Section>
-      <Section title="4. 항체">
-        <button
-          className={btnCls}
-          disabled={d.antibodies.length >= 20}
-          onClick={() =>
-            data((x) => {
-              x.antibodies.push({
-                id: nanoid(12),
-                kind: 'primary',
-                target: '',
-                product: '',
-                dilutionN: 1000,
-                diluent: '5% BSA/TBST',
-                totalUl: 1000,
-                start: null,
-                end: null,
-              });
-            })
-          }
-        >
-          항체 추가
-        </button>
+      </StepSection>
+
+      <StepSection
+        id="wr-antibodies"
+        n={4}
+        title="항체"
+        actions={
+          <button
+            className={btnCls}
+            disabled={d.antibodies.length >= 20}
+            onClick={() =>
+              data((x) => {
+                x.antibodies.push({
+                  id: nanoid(12),
+                  kind: 'primary',
+                  target: '',
+                  product: '',
+                  dilutionN: 1000,
+                  diluent: '5% BSA/TBST',
+                  totalUl: 1000,
+                  start: null,
+                  end: null,
+                });
+              })
+            }
+          >
+            <Plus size={13} aria-hidden /> 항체 추가
+          </button>
+        }
+      >
+        {d.antibodies.length === 0 && <div className="workbench-empty">항체가 없습니다. 항체 추가로 1차·2차 항체를 등록하세요.</div>}
         {d.antibodies.map((a, i) => {
           const mix = antibodyMix(a.dilutionN, a.totalUl);
           return (
-            <div className="space-y-3 rounded-lg border border-line p-3" key={a.id}>
-              <div className="grid gap-3 sm:grid-cols-3">
-                <Field label="종류">
-                  <select
-                    className={inputCls}
-                    value={a.kind}
-                    onChange={(e) =>
-                      data((x) => {
-                        x.antibodies[i].kind = e.target.value as 'primary' | 'secondary';
-                      })
-                    }
-                  >
-                    <option value="primary">1차</option>
-                    <option value="secondary">2차</option>
-                  </select>
-                </Field>
-                <Field label="표적">
-                  <input
-                    className={inputCls}
-                    value={a.target}
-                    onChange={(e) =>
-                      data((x) => {
-                        x.antibodies[i].target = e.target.value;
-                      })
-                    }
-                  />
-                </Field>
-                <Field label="제품">
-                  <input
-                    className={inputCls}
-                    value={a.product}
-                    onChange={(e) =>
-                      data((x) => {
-                        x.antibodies[i].product = e.target.value;
-                      })
-                    }
-                  />
-                </Field>
-                <Field label="희석비 1:N">
+            <div className="wr-ab" key={a.id}>
+              <Fld label="종류">
+                <select
+                  aria-label={`항체 ${i + 1} 종류`}
+                  className={`${inputCls} w-20`}
+                  value={a.kind}
+                  onChange={(e) =>
+                    data((x) => {
+                      x.antibodies[i].kind = e.target.value as 'primary' | 'secondary';
+                    })
+                  }
+                >
+                  <option value="primary">1차</option>
+                  <option value="secondary">2차</option>
+                </select>
+              </Fld>
+              <Fld label="표적">
+                <input
+                  className={`${inputCls} w-36`}
+                  value={a.target}
+                  onChange={(e) =>
+                    data((x) => {
+                      x.antibodies[i].target = e.target.value;
+                    })
+                  }
+                />
+              </Fld>
+              <Fld label="제품">
+                <input
+                  className={`${inputCls} w-44`}
+                  value={a.product}
+                  onChange={(e) =>
+                    data((x) => {
+                      x.antibodies[i].product = e.target.value;
+                    })
+                  }
+                />
+              </Fld>
+              <Fld label="희석비">
+                <span className="wr-ctl">
+                  <em>1 :</em>
                   <input
                     type="number"
                     min="1"
                     max="100000"
-                    className={inputCls}
+                    className={`${inputCls} w-24`}
                     value={a.dilutionN}
                     onChange={(e) => {
                       const n = Number(e.target.value);
@@ -653,8 +782,10 @@ export function WesternRun({ id }: { id: string }) {
                         });
                     }}
                   />
-                </Field>
-                <Field label="희석액">
+                </span>
+              </Fld>
+              <Fld label="희석액">
+                <div className="w-48">
                   <OptionCombobox
                     category="antibody_diluent"
                     value={a.diluent}
@@ -664,39 +795,34 @@ export function WesternRun({ id }: { id: string }) {
                       })
                     }
                   />
-                </Field>
-                <Field label="총 부피 (µL)">
-                  <input
-                    type="number"
-                    min="1"
-                    max="50000"
-                    className={inputCls}
-                    value={a.totalUl}
-                    onChange={(e) => {
-                      const n = Number(e.target.value);
-                      if (n >= 1 && n <= 50000)
-                        data((x) => {
-                          x.antibodies[i].totalUl = n;
-                        });
-                    }}
-                  />
-                </Field>
-              </div>
-              <p className="text-sm">
+                </div>
+              </Fld>
+              <Fld label="총 부피" unit="µL">
+                <input
+                  type="number"
+                  min="1"
+                  max="50000"
+                  className={`${inputCls} w-24`}
+                  value={a.totalUl}
+                  onChange={(e) => {
+                    const n = Number(e.target.value);
+                    if (n >= 1 && n <= 50000)
+                      data((x) => {
+                        x.antibodies[i].totalUl = n;
+                      });
+                  }}
+                />
+              </Fld>
+              <span className="wr-ab-mix">
                 항체 {Number(mix.antibodyUl.toFixed(2))} µL + 희석액 {Number(mix.diluentUl.toFixed(2))} µL
-              </p>
-              <div className="flex flex-wrap gap-3">
-                {(['start', 'end'] as const).map((key) => (
-                  <label key={key} className="text-xs">
-                    {key === 'start' ? '시작' : '종료'}
+              </span>
+              {(['start', 'end'] as const).map((key) => (
+                <Fld key={key} label={`반응 ${key === 'start' ? '시작' : '종료'}`}>
+                  <span className="wr-time">
                     <input
                       type="datetime-local"
-                      className={inputCls}
-                      value={
-                        a[key]
-                          ? new Date(Date.parse(a[key]!) - new Date(a[key]!).getTimezoneOffset() * 60000).toISOString().slice(0, 16)
-                          : ''
-                      }
+                      className={`${inputCls} w-[176px]`}
+                      value={localTime(a[key])}
                       onChange={(e) =>
                         data((x) => {
                           x.antibodies[i][key] = e.target.value ? new Date(e.target.value).toISOString() : null;
@@ -704,7 +830,9 @@ export function WesternRun({ id }: { id: string }) {
                       }
                     />
                     <button
+                      type="button"
                       className={smallBtnCls}
+                      aria-label={`항체 ${i + 1} ${key === 'start' ? '시작' : '종료'} 시각을 지금으로`}
                       onClick={() =>
                         data((x) => {
                           x.antibodies[i][key] = new Date().toISOString();
@@ -713,150 +841,207 @@ export function WesternRun({ id }: { id: string }) {
                     >
                       지금
                     </button>
-                  </label>
-                ))}
-                <button
-                  className={smallBtnCls}
-                  onClick={() =>
-                    data((x) => {
-                      x.antibodies.splice(i, 1);
-                    })
-                  }
-                >
-                  항체 삭제
-                </button>
-              </div>
+                  </span>
+                </Fld>
+              ))}
+              <button
+                className={`${smallIconBtnCls} wr-ab-del`}
+                aria-label={`항체 ${i + 1} 삭제`}
+                title="항체 삭제"
+                onClick={() =>
+                  data((x) => {
+                    x.antibodies.splice(i, 1);
+                  })
+                }
+              >
+                <Trash2 size={13} aria-hidden />
+              </button>
             </div>
           );
         })}
-      </Section>
-      <Section title="5. ECL">
-        <Field label="막 수">
-          <input
-            type="number"
-            min="1"
-            max="100"
-            className={inputCls}
-            value={d.membranes}
-            onChange={(e) => {
-              const n = Number(e.target.value);
-              if (Number.isInteger(n) && n >= 1 && n <= 100)
-                data((x) => {
-                  x.membranes = n;
-                });
-            }}
-          />
-        </Field>
-        <p>
-          용액 1 {ecl.ecl1} µL + 용액 2 {ecl.ecl2} µL + TBST {ecl.tbst} µL = 총 {ecl.total} µL
-        </p>
-      </Section>
-      <Section title="6. 단계 체크리스트">
-        {[1, 2, 3].map((phase) => (
-          <div key={phase} className="space-y-3">
-            <h3 className="font-semibold">{phase}단계</h3>
-            {WESTERN_STEPS.filter((s) => s.phase === phase).map((s) => {
-              const state = d.steps[s.id];
-              return (
-                <div
-                  key={s.id}
-                  className={`space-y-2 rounded-lg border p-3 ${finished.includes(s.id) ? 'border-warning bg-warning-soft' : 'border-line'}`}
-                >
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={state.done}
-                      onChange={(e) =>
-                        data((x) => {
-                          x.steps[s.id].done = e.target.checked;
-                          x.steps[s.id].doneAt = e.target.checked ? new Date().toISOString() : null;
-                        })
-                      }
-                    />
-                    <span>
-                      {s.id} {s.title}
-                    </span>
-                  </label>
-                  {state.doneAt && <p className="text-xs text-fg-muted">완료: {new Date(state.doneAt).toLocaleString('ko-KR')}</p>}
-                  {s.timerMin && <StepTimer title={s.title} minutes={s.timerMin} onFinish={() => setFinished((v) => [...v, s.id])} />}
-                  <input
-                    aria-label={`${s.title} 메모`}
-                    placeholder="단계 메모"
-                    className={inputCls}
-                    value={state.note}
-                    onChange={(e) =>
-                      data((x) => {
-                        x.steps[s.id].note = e.target.value;
-                      })
-                    }
-                  />
-                </div>
-              );
-            })}
-          </div>
-        ))}
-        <details>
-          <summary className="cursor-pointer">세척 요약표</summary>
-          <p className="my-2 text-sm text-fg-muted">단백질 전이 면을 위로 두고 shaker 위에서 진행하며, 매회 새 1X TBST로 교체합니다.</p>
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr>
-                <th>세척 시점</th>
-                <th>횟수</th>
-                <th>1회 시간</th>
-              </tr>
-            </thead>
-            <tbody>
-              {WASH_SUMMARY.map((row) => (
-                <tr key={row[0]}>
-                  {row.map((v, i) => (
-                    <td className="py-1" key={i}>
-                      {v}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-            <tfoot>
-              <tr>
-                <td>합계</td>
-                <td>17–18회</td>
-                <td>—</td>
-              </tr>
-            </tfoot>
-          </table>
-        </details>
-      </Section>
-      <Section title="7. 실험 기록란">
-        <button
-          className={btnCls}
-          onClick={() =>
-            data((x) => {
-              for (const [key, value] of Object.entries(auto)) if (!x.record[key]?.trim()) x.record[key] = value;
-            })
-          }
-        >
-          자동값 채우기
-        </button>
-        <div className="grid gap-3 md:grid-cols-2">
-          {WESTERN_RECORD_FIELDS.map((f) => (
-            <Field label={`${f.key} ${f.label}`} key={f.key}>
-              <textarea
-                rows={3}
-                className={inputCls}
-                value={d.record[f.key] ?? ''}
-                placeholder={auto[f.key] ?? ''}
-                onChange={(e) =>
+      </StepSection>
+
+      <StepSection id="wr-ecl" n={5} title="ECL">
+        <div className="flex flex-wrap items-end gap-x-6 gap-y-3">
+          <Fld label="막 수" unit="장">
+            <input
+              type="number"
+              min="1"
+              max="100"
+              className={`${inputCls} w-20`}
+              value={d.membranes}
+              onChange={(e) => {
+                const n = Number(e.target.value);
+                if (Number.isInteger(n) && n >= 1 && n <= 100)
                   data((x) => {
-                    x.record[f.key] = e.target.value;
-                  })
-                }
-              />
-            </Field>
-          ))}
+                    x.membranes = n;
+                  });
+              }}
+            />
+          </Fld>
+          <p className="pb-[5px] text-[13px] tabular-nums">
+            용액 1 <b>{ecl.ecl1}</b> µL + 용액 2 <b>{ecl.ecl2}</b> µL + TBST <b>{ecl.tbst}</b> µL = 총 <b>{ecl.total}</b> µL
+          </p>
         </div>
-        <Field label="전체 메모">
+      </StepSection>
+
+      <StepSection id="wr-checklist" n={6} title="단계 체크리스트" hint={`${stepsDone}/${WESTERN_STEPS.length} 완료`}>
+        {[1, 2, 3].map((phase) => {
+          const list = WESTERN_STEPS.filter((s) => s.phase === phase);
+          return (
+            <div key={phase} role="group" aria-label={`${phase}단계`}>
+              <h3 className="wr-phase">
+                {phase}단계
+                <small>
+                  {list.filter((s) => d.steps[s.id].done).length}/{list.length}
+                </small>
+              </h3>
+              {list.map((s) => {
+                const state = d.steps[s.id];
+                const memoOpen = !!state.note || memos.includes(s.id);
+                return (
+                  <div
+                    key={s.id}
+                    className="wr-step"
+                    data-done={state.done || undefined}
+                    data-finished={finished.includes(s.id) || undefined}
+                  >
+                    <label className="wr-step-check">
+                      <input
+                        type="checkbox"
+                        checked={state.done}
+                        onChange={(e) =>
+                          data((x) => {
+                            x.steps[s.id].done = e.target.checked;
+                            x.steps[s.id].doneAt = e.target.checked ? new Date().toISOString() : null;
+                          })
+                        }
+                      />
+                      <span>
+                        {s.id} {s.title}
+                      </span>
+                      {state.doneAt && <small>완료 {new Date(state.doneAt).toLocaleString('ko-KR')}</small>}
+                    </label>
+                    {s.timerMin && <StepTimer title={s.title} minutes={s.timerMin} onFinish={() => setFinished((v) => [...v, s.id])} />}
+                    <button
+                      className={smallGhostBtnCls}
+                      aria-expanded={memoOpen}
+                      aria-label={`${s.title} 메모 ${memoOpen ? '접기' : '열기'}`}
+                      disabled={memoOpen && !!state.note}
+                      onClick={() => setMemos((v) => (v.includes(s.id) ? v.filter((m) => m !== s.id) : [...v, s.id]))}
+                    >
+                      메모
+                    </button>
+                    {memoOpen && (
+                      <div className="wr-step-memo">
+                        <input
+                          aria-label={`${s.title} 메모`}
+                          placeholder="단계 메모"
+                          className={inputCls}
+                          value={state.note}
+                          onChange={(e) =>
+                            data((x) => {
+                              x.steps[s.id].note = e.target.value;
+                            })
+                          }
+                        />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })}
+        <details className="wr-fold">
+          <summary>
+            <ChevronRight size={13} aria-hidden /> 세척 요약표
+          </summary>
+          <div className="wr-fold-body">
+            <p className="wr-note mb-2" data-quiet>
+              <Info size={13} aria-hidden />
+              단백질 전이 면을 위로 두고 shaker 위에서 진행하며, 매회 새 1X TBST로 교체합니다.
+            </p>
+            <table className="pr-table">
+              <thead>
+                <tr>
+                  <th>세척 시점</th>
+                  <th className="num">횟수</th>
+                  <th className="num">1회 시간</th>
+                </tr>
+              </thead>
+              <tbody>
+                {WASH_SUMMARY.map((row) => (
+                  <tr key={row[0]}>
+                    {row.map((v, i) => (
+                      <td className={i ? 'num' : undefined} key={i}>
+                        {v}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td className="font-semibold">합계</td>
+                  <td className="num font-semibold">17–18회</td>
+                  <td className="num">—</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </details>
+      </StepSection>
+
+      <details className="workbench-section workbench-panel" open={Object.values(d.record).some((v) => v.trim()) || undefined}>
+        <summary>
+          <ChevronRight size={14} aria-hidden /> 추가 실험 기록 (선택)
+        </summary>
+        <div className="workbench-section-body space-y-3">
+          <p className="wr-note" data-quiet>
+            <Info size={13} aria-hidden />
+            가져온 Western 문서의 실험 기록란 23개입니다. 겔·시료·항체 등 위 입력과 겹치는 항목은 보충 기록용이며 필수가 아닙니다. 기존 기록은 그대로 보존되며, 자동값 채우기는 빈 칸만 채웁니다.
+          </p>
+          <button
+            className={btnCls}
+            onClick={() =>
+              data((x) => {
+                for (const [key, value] of Object.entries(auto)) if (!x.record[key]?.trim()) x.record[key] = value;
+              })
+            }
+          >
+            자동값 채우기
+          </button>
+          <div className="wr-record">
+            {WESTERN_RECORD_FIELDS.map((f) => (
+              <label key={f.key} className="wr-field">
+                <span>
+                  {f.key} {f.label}
+                </span>
+                <textarea
+                  rows={2}
+                  className={inputCls}
+                  value={d.record[f.key] ?? ''}
+                  placeholder={auto[f.key] ?? ''}
+                  onChange={(e) =>
+                    data((x) => {
+                      x.record[f.key] = e.target.value;
+                    })
+                  }
+                />
+              </label>
+            ))}
+          </div>
+        </div>
+      </details>
+
+      <section className="workbench-section workbench-panel" aria-labelledby="wr-notes-title">
+        <header className="workbench-section-head">
+          <h2 id="wr-notes-title">전체 메모</h2>
+        </header>
+        <div className="workbench-section-body">
           <textarea
+            aria-label="전체 메모"
             rows={4}
             className={inputCls}
             value={d.notes}
@@ -866,8 +1051,8 @@ export function WesternRun({ id }: { id: string }) {
               })
             }
           />
-        </Field>
-      </Section>
+        </div>
+      </section>
       {drawer && (
         <div className="fixed inset-0 z-50 bg-black/30" onMouseDown={() => setDrawer(false)}>
           <aside
@@ -902,7 +1087,7 @@ export function WesternRun({ id }: { id: string }) {
               </select>
             </Field>
             {protocol ? (
-              <Markdown text={protocol.body_md ?? protocol.bodyMd ?? ''} />
+              <ProtocolPreview protocol={{ ...protocol, body_md: protocol.body_md ?? '' }} />
             ) : (
               <p className="text-fg-muted">프로토콜을 선택하세요.</p>
             )}

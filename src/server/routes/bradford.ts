@@ -1,8 +1,10 @@
 import { Hono } from 'hono';
+import { bodyLimit } from 'hono/body-limit';
 import { nanoid } from 'nanoid';
 import { computeBradford, STANDARD_PRESETS, validateBradfordData, type BradfordData } from '../../shared/bradford';
 import { db, now, parseJsonColumn } from '../db';
 import { HttpError } from '../http-error';
+import { MAX_WORKBOOK_BYTES, parseBradfordWorkbook } from '../bradford-workbook';
 
 interface AssayRow {
   id: string;
@@ -14,6 +16,19 @@ interface AssayRow {
   updated_at: string;
 }
 export const bradford = new Hono();
+bradford.post('/bradford/import-workbook', bodyLimit({ maxSize: MAX_WORKBOOK_BYTES + 65536, onError: () => { throw new HttpError(400, '엑셀 파일은 10 MB 이하여야 합니다'); } }), async (c) => {
+  const length = Number(c.req.header('content-length'));
+  if (length > MAX_WORKBOOK_BYTES + 65536) throw new HttpError(400, '엑셀 파일은 10 MB 이하여야 합니다');
+  try {
+    const body = await c.req.parseBody();
+    const file = body.file;
+    if (!(file instanceof File) || !/\.(xlsx|xlsm)$/i.test(file.name)) throw new Error('xlsx, xlsm 파일만 가져올 수 있습니다');
+    if (file.size > MAX_WORKBOOK_BYTES) throw new Error('엑셀 파일은 10 MB 이하여야 합니다');
+    return c.json({ filename: file.name, ...await parseBradfordWorkbook(Buffer.from(await file.arrayBuffer())) });
+  } catch (error) {
+    throw new HttpError(400, error instanceof Error ? error.message : '엑셀 파일을 읽지 못했습니다');
+  }
+});
 function getAssay(id: string): AssayRow {
   const row = db.prepare('SELECT * FROM bradford_assays WHERE id=?').get(id) as unknown as AssayRow | undefined;
   if (!row) throw new HttpError(404, '정량 실험을 찾을 수 없습니다');

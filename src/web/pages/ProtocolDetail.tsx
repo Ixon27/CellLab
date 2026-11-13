@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useLocation } from 'wouter';
+import { ArrowLeft } from 'lucide-react';
 import { api } from '../api';
-import { btnCls, dangerBtnCls, Dialog, Field, inputCls, primaryBtnCls } from '../components/Dialog';
-import { Markdown } from '../components/Markdown';
+import { btnCls, solidDangerBtnCls, Dialog, Field, inputCls, primaryBtnCls } from '../components/Dialog';
+import { ProtocolDocumentEditor } from '../components/ProtocolDocumentEditor';
+import { ProtocolOrigin, ProtocolPreview } from '../components/ProtocolPreview';
 import { useToast } from '../components/Toast';
 import type { ProtocolDocument } from './Protocols';
 
@@ -41,6 +43,10 @@ export function ProtocolDetail({ id }: { id: string }) {
   }, [id]);
   useEffect(() => {
     setDoc(null);
+    setDraft(null);
+    setRevision(null);
+    setRevisions([]);
+    setEditing(new URLSearchParams(window.location.search).get('edit') === '1');
     void load();
   }, [load]);
 
@@ -55,6 +61,7 @@ export function ProtocolDetail({ id }: { id: string }) {
       setDoc(next);
       setDraft(next);
       setEditing(false);
+      setRevision(null);
       setRevisions(await api<Revision[]>(`/api/protocols/${id}/revisions`));
       toast('프로토콜을 저장했습니다');
     } catch (e) {
@@ -120,15 +127,15 @@ export function ProtocolDetail({ id }: { id: string }) {
     );
   if (!doc || !draft) return <p className="p-6 text-fg-muted">불러오는 중…</p>;
   return (
-    <div className="mx-auto max-w-7xl space-y-5 p-6">
-      <Link href="/protocols" className="text-sm text-accent">
-        ← 프로토콜 목록
-      </Link>
-      <header className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-semibold text-fg">{doc.title}</h1>
-          <p className="mt-1 text-sm text-fg-muted">
-            {doc.version || '버전 없음'} · {doc.status === 'draft' ? '초안 — 실험실 지침으로 확인하세요' : '확정'}
+    <div className="workbench-page space-y-5">
+      <header className="workbench-head !mb-0 !items-start">
+        <div className="min-w-0">
+          <Link href="/protocols" className="mb-1.5 inline-flex items-center gap-1 text-[12px] text-fg-muted hover:text-fg">
+            <ArrowLeft size={13} aria-hidden /> 프로토콜 목록
+          </Link>
+          <h1>{doc.title}</h1>
+          <p className="workbench-head-note">
+            {doc.version || '버전 없음'} · {doc.status === 'draft' ? '초안 — 실험실 지침으로 확인하세요' : '사용자가 확정한 문서 — 외부 검증을 뜻하지 않습니다'}
             {doc.source_file ? ` · 원본: ${doc.source_file}` : ''}
           </p>
         </div>
@@ -136,7 +143,7 @@ export function ProtocolDetail({ id }: { id: string }) {
           <select
             aria-label="이전 버전 보기"
             className={`${inputCls} w-auto`}
-            value=""
+            value={revision?.id ?? ''}
             disabled={busy}
             onChange={(e) => setRevision(revisions.find((r) => r.id === e.target.value) ?? null)}
           >
@@ -168,8 +175,11 @@ export function ProtocolDetail({ id }: { id: string }) {
               <button className={btnCls} disabled={busy} onClick={() => void toggleStatus()}>
                 {doc.status === 'draft' ? '확정으로 변경' : '초안으로 변경'}
               </button>
-              <button className={primaryBtnCls} onClick={() => setEditing(true)}>
-                편집
+              <button className={primaryBtnCls} disabled={busy} onClick={() => {
+                setDraft(doc);
+                setEditing(true);
+              }}>
+                {doc.provenance.cellLineId ? '세포주용 사본 편집' : '공유 원본 편집'}
               </button>
               {!doc.builtin && (
                 <button className={btnCls} onClick={() => setDeleting(true)}>
@@ -180,6 +190,26 @@ export function ProtocolDetail({ id }: { id: string }) {
           )}
         </div>
       </header>
+      {editing && (
+        <section aria-label="문서 출처와 편집 범위" className="space-y-3">
+          <ProtocolOrigin protocol={doc} />
+          <div role="note" className="rounded-xl border border-line bg-raised p-4 text-sm leading-relaxed text-fg-muted">
+            {doc.provenance.cellLineId ? (
+              <p>이 세포주용 사본의 실험 절차를 편집합니다. 배지·온도 등 연결된 조건 값은{' '}
+                <Link className="text-accent" href={`/cells/${doc.provenance.cellLineId}?tab=profiles`}>
+                  세포주 배양 조건에서 편집
+                </Link>하세요. 본문의 조건 항목은 값을 직접 입력하지 않고 연결을 유지합니다.
+              </p>
+            ) : (
+              <>
+                <p className="text-warning">공유 원본의 절차를 편집합니다. 이 문서를 연결한 모든 세포주·실험에 영향을 줍니다.</p>
+                <p className="mt-1">배지·온도 등 세포주별 조건은 해당 세포주의 배양 조건에서 수정하세요.
+                  한 세포주의 절차만 바꾸려면 배양 SOP에서 전용 사본을 만드세요. 연결된 조건 항목은 세포주 맥락이 있어야 값을 확인할 수 있습니다.</p>
+              </>
+            )}
+          </div>
+        </section>
+      )}
       {editing ? (
         <>
           <div className="grid gap-3 md:grid-cols-[1fr_180px_140px]">
@@ -210,25 +240,19 @@ export function ProtocolDetail({ id }: { id: string }) {
               </select>
             </Field>
           </div>
-          <div className="grid gap-4 lg:grid-cols-2">
-            <section className="min-w-0">
-              <h2 className="mb-2 text-sm font-medium">마크다운 편집</h2>
-              <textarea
-                aria-label="프로토콜 마크다운 본문"
-                className={`${inputCls} min-h-[65vh] resize-y font-mono leading-relaxed`}
-                value={draft.body_md}
-                onChange={(e) => setDraft({ ...draft, body_md: e.target.value })}
-              />
-            </section>
-            <section className="min-w-0 rounded-xl border border-line bg-raised p-5">
-              <h2 className="mb-4 text-sm font-medium text-fg-muted">실시간 미리보기</h2>
-              <Markdown text={draft.body_md} />
-            </section>
-          </div>
+          <section aria-label="프로토콜 절차 편집" className="min-w-0">
+            <h2 className="mb-2 text-sm font-medium">실험 절차</h2>
+            <ProtocolDocumentEditor
+              key={doc.id}
+              value={draft.body_md}
+              onChange={(body_md) => setDraft((current) => current ? { ...current, body_md } : current)}
+              cellLineId={doc.provenance.cellLineId}
+            />
+          </section>
         </>
       ) : (
         <article className="min-w-0 rounded-xl border border-line bg-raised p-6">
-          <Markdown text={doc.body_md} />
+          <ProtocolPreview protocol={doc} />
         </article>
       )}
       {revision && (
@@ -247,7 +271,7 @@ export function ProtocolDetail({ id }: { id: string }) {
             {new Date(revision.saved_at).toLocaleString('ko-KR')} · 복원하면 현재 본문도 이력에 보관됩니다. 편집 중인 미저장 내용은
             사라집니다.
           </p>
-          <Markdown text={revision.body_md} />
+          <ProtocolPreview protocol={{ ...doc, body_md: revision.body_md }} />
         </Dialog>
       )}
       {deleting && (
@@ -256,7 +280,7 @@ export function ProtocolDetail({ id }: { id: string }) {
           onClose={() => setDeleting(false)}
           dismissible={!busy}
           footer={
-            <button className={dangerBtnCls} disabled={busy} onClick={() => void remove()}>
+            <button className={solidDangerBtnCls} disabled={busy} onClick={() => void remove()}>
               삭제
             </button>
           }

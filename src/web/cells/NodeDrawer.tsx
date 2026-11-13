@@ -2,6 +2,11 @@ import * as Plot from '@observablehq/plot';
 import { useEffect, useMemo, useState } from 'react';
 import { formatCount } from '../../shared/cell-count';
 import type { CellLineDto, CultureDto, LogDto, LotDto, ProfileDto } from '../../shared/cell-line';
+import type { CultureVesselUse } from '../../shared/lab-products';
+import { FEED_MODE_LABELS, RESERVED_EXTRA_KEYS } from '../../shared/culture-operations';
+import { VesselUsePicker } from '../components/VesselUsePicker';
+import { PhotoStrip } from './operations/ObservationForm';
+import { LotRecoveryPanel } from './operations/LotRecoveryPanel';
 import { api } from '../api';
 import { Field, inputCls, primaryBtnCls, smallBtnCls } from '../components/Dialog';
 import { OptionCombobox } from '../components/OptionCombobox';
@@ -50,6 +55,7 @@ export function NodeDrawer({
   const [location, setLocation] = useState(lot?.location ?? '');
   const [vials, setVials] = useState(String(lot?.vialsRemaining ?? 0));
   const [vessel, setVessel] = useState(culture?.vessel ?? '');
+  const [vesselUse, setVesselUse] = useState<CultureVesselUse | null>(culture?.vesselUse ?? null);
   const [profile, setProfile] = useState(culture?.profileId ?? '');
   const [notes, setNotes] = useState(node.notes);
   const [busy, setBusy] = useState(false);
@@ -61,6 +67,7 @@ export function NodeDrawer({
     setVials(String(lot?.vialsRemaining ?? 0));
     setLocation(lot?.location ?? '');
     setVessel(culture?.vessel ?? '');
+    setVesselUse(culture?.vesselUse ?? null);
     setProfile(culture?.profileId ?? '');
   }, [node, lot, culture]);
   const chart = useMemo<Plot.PlotOptions>(() => {
@@ -95,7 +102,7 @@ export function NodeDrawer({
     try {
       await api(`/api/${lot ? 'lots' : 'cultures'}/${node.id}`, {
         method: 'PUT',
-        json: lot ? { label, location, notes, vialsRemaining: Number(vials) } : { label, vessel, notes, profileId: profile || null },
+        json: lot ? { label, location, notes, vialsRemaining: Number(vials) } : { label, vessel, vesselUse, notes, profileId: profile || null },
       });
       changed();
       toast('저장했습니다');
@@ -121,7 +128,7 @@ export function NodeDrawer({
       {culture && (
         <p className="mb-3 text-xs text-fg-muted">
           {culture.vessel} · 최근 confluency{' '}
-          {lastConfluency ? `${lastConfluency.confluencyPct}% · ${new Date(lastConfluency.at).toLocaleDateString('ko-KR')}` : '미정'}
+          {lastConfluency ? `${lastConfluency.confluencyPct}% · ${new Date(lastConfluency.at).toLocaleString('ko-KR')} (관찰 당시 값)` : '미정'}
         </p>
       )}
       {culture?.endNote && <p className="mb-3 text-xs text-fg-muted">종료 메모: {culture.endNote}</p>}
@@ -155,9 +162,10 @@ export function NodeDrawer({
           </>
         ) : (
           <>
-            <Field label="배양 용기">
+            <VesselUsePicker value={vesselUse} legacyVessel={culture?.vessel} onChange={(use) => setVesselUse(use)} />
+            {!vesselUse && <Field label="배양 용기 (직접 입력)">
               <OptionCombobox category="vessel" value={vessel} onChange={setVessel} />
-            </Field>
+            </Field>}
             <Field label="연결 배양 조건">
               <select className={inputCls} value={profile} onChange={(e) => setProfile(e.target.value)}>
                 <option value="">연결하지 않음</option>
@@ -177,6 +185,7 @@ export function NodeDrawer({
           정보 저장
         </button>
       </details>
+      {lot && <LotRecoveryPanel key={lot.id} lot={lot} onSaved={changed} />}
       <div className="my-4 flex flex-wrap gap-2">
         {lot ? (
           <button className={smallBtnCls} disabled={lot.vialsRemaining === 0} onClick={() => setDialog('thaw')}>
@@ -224,7 +233,11 @@ export function NodeDrawer({
                 {l.totalCells !== null && `총 ${formatCount(l.totalCells)}개`}
               </p>
               {l.mycoplasma && <p>마이코플라스마: {{ negative: '음성', positive: '양성', pending: '검사 중' }[l.mycoplasma]}</p>}
-              {Object.entries(l.extra).map(([k, v]) => (
+              {l.feed && <p className="mt-1">{FEED_MODE_LABELS[l.feed.mode]} · {l.feed.mediumLabel ?? '배지 미기록'} · 제거 {l.feed.removedMl ?? '미기록'} mL / 추가 {l.feed.addedMl ?? '미기록'} mL{l.feed.mediumDetail && ` · ${l.feed.mediumDetail}`}</p>}
+              {l.morphology && <p className="mt-1">형태: {l.morphology}</p>}
+              {l.passage && <p className="mt-1">해리 시약: {l.passage.dissociationReagent ?? '미기록'} · 회수 생세포 {l.passage.recoveredLiveCells?.toLocaleString() ?? '미기록'} · 접종 {l.passage.seededCells?.toLocaleString() ?? '미기록'} cells</p>}
+              <PhotoStrip photos={l.photos ?? []} />
+              {Object.entries(l.extra).filter(([key]) => !RESERVED_EXTRA_KEYS.includes(key)).map(([k, v]) => (
                 <p key={k}>
                   {k}: {v}
                 </p>

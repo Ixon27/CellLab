@@ -70,6 +70,22 @@ export function gelRecipe(
   }));
   return { rows, totalOriginalUl: rows.reduce((s, r) => s + r.originalUl, 0), totalFieldUl: rows.reduce((s, r) => s + r.fieldUl, 0) };
 }
+export function validateWesternLoading(raw: unknown): WesternData['loading'] {
+  const l = object(raw);
+  if (
+    typeof l.proteinUg !== 'number' ||
+    !Number.isFinite(l.proteinUg) ||
+    l.proteinUg <= 0 ||
+    typeof l.finalUl !== 'number' ||
+    !Number.isFinite(l.finalUl) ||
+    l.finalUl <= 0 ||
+    typeof l.sampleBufferX !== 'number' ||
+    !Number.isFinite(l.sampleBufferX) ||
+    l.sampleBufferX <= 1
+  )
+    throw new Error('목표 단백질량과 최종 부피는 양수, sample buffer 배수는 1보다 큰 유한수여야 합니다');
+  return { proteinUg: l.proteinUg, finalUl: l.finalUl, sampleBufferX: l.sampleBufferX };
+}
 export function loadingPlan(concUgPerUl: number | null, l: WesternData['loading']) {
   if (concUgPerUl === null || !Number.isFinite(concUgPerUl) || concUgPerUl <= 0) return null;
   const bufferUl = l.finalUl / l.sampleBufferX,
@@ -126,8 +142,7 @@ function date(v: unknown): string | null {
 }
 export function validateWesternData(raw: unknown): WesternData {
   const r = object(raw),
-    g = object(r.gel),
-    l = object(r.loading);
+    g = object(r.gel);
   if (
     ![5, 8, 10, 12, 15].includes(Number(g.separatingPct)) ||
     ![5, 10].includes(Number(g.separatingScale)) ||
@@ -153,11 +168,7 @@ export function validateWesternData(raw: unknown): WesternData {
       batches: num(g.batches, 1, 10, true),
       temedMultiplier: num(g.temedMultiplier, 0.01, 100),
     },
-    loading: {
-      proteinUg: num(l.proteinUg, 0.001, 100000),
-      finalUl: num(l.finalUl, 0.001, 50000),
-      sampleBufferX: num(l.sampleBufferX, 1.001, 100),
-    },
+    loading: validateWesternLoading(r.loading),
     samples: r.samples.map((v) => {
       const s = object(v),
         source = s.source === null ? null : object(s.source);
@@ -211,7 +222,7 @@ export function westernAutoRecord(d: WesternData): Record<string, string> {
     r08: d.samples
       .map((s) => {
         const p = loadingPlan(s.concUgPerUl, d.loading);
-        return `${s.name}: ${p ? `${p.sampleUl.toFixed(1)} / ${p.diluentUl.toFixed(1)} / ${p.bufferUl.toFixed(1)} µL` : '농도 미정'}`;
+        return `${s.name}: ${p ? (p.ok ? `${p.sampleUl.toFixed(1)} / ${p.diluentUl.toFixed(1)} / ${p.bufferUl.toFixed(1)} µL` : '농축 또는 로딩 조건 조정 필요') : '농도 미정'}`;
       })
       .join('\n'),
     r09: `${d.loading.proteinUg} µg / ${d.loading.finalUl} µL / ${d.loading.sampleBufferX}X sample buffer ${(d.loading.finalUl / d.loading.sampleBufferX).toFixed(1)} µL → 최종 1X`,
@@ -256,7 +267,14 @@ export function westernMarkdown({ run, data: d }: WesternRunView): string {
       ['시료', '원액 µg/µL', '단백질 µL', 'PRO-PREP µL', 'Buffer µL', '합계 µL'],
       d.samples.map((s) => {
         const p = loadingPlan(s.concUgPerUl, d.loading);
-        return [s.name, s.concUgPerUl, p?.sampleUl.toFixed(1), p?.diluentUl.toFixed(1), p?.bufferUl.toFixed(1), p?.finalUl];
+        return [
+          s.name,
+          s.concUgPerUl,
+          p?.ok ? p.sampleUl.toFixed(1) : '조정 필요',
+          p?.ok ? p.diluentUl.toFixed(1) : '—',
+          p?.ok ? p.bufferUl.toFixed(1) : '—',
+          p?.ok ? p.finalUl : '—',
+        ];
       }),
     )}`,
     `## Lane map\n${d.lanes.map((s, i) => `${i + 1}. ${s}`).join('\n')}`,

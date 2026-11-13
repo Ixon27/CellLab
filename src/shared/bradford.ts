@@ -1,3 +1,53 @@
+import { validateWesternLoading } from './western';
+export type PlateMapping = { kind: 'standard' | 'sample'; index: number } | null;
+export interface BradfordPlate {
+  mappings: PlateMapping[];
+  values: (number | null)[];
+  excluded: boolean[];
+  filename: string | null;
+  sheet: string | null;
+  wavelengthNm: number | null;
+}
+export function emptyPlate(): BradfordPlate {
+  return {
+    mappings: Array(96).fill(null),
+    values: Array(96).fill(null),
+    excluded: Array(96).fill(false),
+    filename: null,
+    sheet: null,
+    wavelengthNm: null,
+  };
+}
+/** Plate positions, not editable replicate tables, are the measurement source in plate mode. */
+export function applyPlate(data: BradfordData): BradfordData {
+  if (!data.plate) return data;
+  const standards = data.standards.map((s) => ({ ...s, reps: [] as Rep[] }));
+  const samples = data.samples.map((s) => ({ ...s, reps: [] as Rep[] }));
+  data.plate.mappings.forEach((m, i) => {
+    if (!m) return;
+    const target = (m.kind === 'standard' ? standards : samples)[m.index];
+    if (!target) throw new Error('플레이트 배정 대상이 없습니다');
+    if (target.reps.length >= 6) throw new Error('한 표준·시료에는 최대 6개 well을 배정할 수 있습니다');
+    target.reps.push({ abs: data.plate!.values[i], excluded: data.plate!.excluded[i] });
+  });
+  for (const row of [...standards, ...samples]) if (!row.reps.length) row.reps.push({ abs: null, excluded: false });
+  return { ...data, standards, samples };
+}
+/** Delete a row without moving its well assignments onto its successor. */
+export function removePlateRow(data: BradfordData, kind: 'standard' | 'sample', index: number): BradfordData {
+  const next = {
+    ...data,
+    [kind === 'standard' ? 'standards' : 'samples']: (kind === 'standard' ? data.standards : data.samples).filter((_, i) => i !== index),
+  };
+  if (data.plate)
+    next.plate = {
+      ...data.plate,
+      mappings: data.plate.mappings.map((m) =>
+        !m || m.kind !== kind ? m : m.index === index ? null : { ...m, index: m.index > index ? m.index - 1 : m.index },
+      ),
+    };
+  return applyPlate(next);
+}
 export interface Rep {
   abs: number | null;
   excluded: boolean;
@@ -9,6 +59,8 @@ export interface BradfordData {
   standards: { conc: number; reps: Rep[] }[];
   samples: { name: string; dilution: number; cultureId: string | null; reps: Rep[] }[];
   notes: string;
+  plate?: BradfordPlate;
+  loading?: { proteinUg: number; finalUl: number; sampleBufferX: number };
 }
 export const STANDARD_PRESETS: { id: 'standard' | 'micro' | 'bca'; label: string; concs: number[] }[] = [
   { id: 'standard', label: '표준 (0–2000 µg/mL)', concs: [0, 125, 250, 500, 750, 1000, 1500, 2000] },
@@ -69,11 +121,18 @@ function fitCoefficients(points: { x: number; y: number }[], degree: number): nu
  * BCA 프리셋 생성 시에는 라우트에서 562 nm·3회 반복을 적용한다.
  */
 export function computeBradford(d: BradfordData): BradfordResult {
+  d = applyPlate(d);
   const raw = d.standards.map((s) => ({ conc: s.conc, ...stats(s.reps) }));
   const blank = d.subtractBlank ? (raw.find((s) => s.conc === 0)?.mean ?? null) : null;
   const standards = raw.map(({ n: _n, ...s }) => ({ ...s, corrected: s.mean === null ? null : s.mean - (blank ?? 0) }));
   const points = standards.filter((s) => s.corrected !== null).map((s) => ({ x: s.conc, y: s.corrected! }));
   const warnings: string[] = [];
+  if (d.plate) {
+    const missing = d.plate.mappings.flatMap((m, i) =>
+      m && d.plate!.values[i] === null ? [`${'ABCDEFGH'[Math.floor(i / 12)]}${(i % 12) + 1}`] : [],
+    );
+    if (missing.length) warnings.push(`배정된 well 측정값 없음: ${missing.join(', ')}`);
+  }
   let fit: BradfordResult['fit'] = null;
   if (points.length < (d.fit === 'linear' ? 3 : 4)) warnings.push('표준점이 부족합니다 (선형 ≥3, 2차 ≥4)');
   else {
@@ -185,5 +244,53 @@ export function validateBradfordData(raw: unknown): BradfordData {
   if (d.fit !== 'linear' && d.fit !== 'quadratic') throw new Error('적합 방식을 선택하세요');
   if (typeof d.subtractBlank !== 'boolean' || typeof d.notes !== 'string' || d.notes.length > 50000)
     throw new Error('정량 설정이 올바르지 않습니다');
-  return { wavelengthNm: number(d.wavelengthNm, 0, false), fit: d.fit, subtractBlank: d.subtractBlank, standards, samples, notes: d.notes };
+  const result: BradfordData = {
+    wavelengthNm: number(d.wavelengthNm, 0, false),
+    fit: d.fit,
+    subtractBlank: d.subtractBlank,
+    standards,
+    samples,
+    notes: d.notes,
+  };
+  if (d.loading !== undefined) result.loading = validateWesternLoading(d.loading);
+  if (d.plate !== undefined) {
+    const p = d.plate as BradfordPlate;
+    if (
+      !p ||
+      typeof p !== 'object' ||
+      !Array.isArray(p.mappings) ||
+      !Array.isArray(p.values) ||
+      !Array.isArray(p.excluded) ||
+      p.mappings.length !== 96 ||
+      p.values.length !== 96 ||
+      p.excluded.length !== 96
+    )
+      throw new Error('플레이트에는 96개 well이 필요합니다');
+    const mappings = p.mappings.map((m) => {
+      if (m === null) return null;
+      if (
+        !m ||
+        (m.kind !== 'standard' && m.kind !== 'sample') ||
+        !Number.isInteger(m.index) ||
+        m.index < 0 ||
+        m.index >= (m.kind === 'standard' ? standards : samples).length
+      )
+        throw new Error('플레이트 배정 대상이 올바르지 않습니다');
+      return { kind: m.kind, index: m.index };
+    });
+    if (
+      p.excluded.some((v) => typeof v !== 'boolean') ||
+      [p.filename, p.sheet].some((v) => v !== null && (typeof v !== 'string' || v.length > 500))
+    )
+      throw new Error('플레이트 출처·제외 설정이 올바르지 않습니다');
+    result.plate = {
+      mappings,
+      values: p.values.map((v) => (v === null ? null : number(v, -Infinity))),
+      excluded: [...p.excluded],
+      filename: p.filename,
+      sheet: p.sheet,
+      wavelengthNm: p.wavelengthNm === null ? null : number(p.wavelengthNm, 0, false),
+    };
+  }
+  return applyPlate(result);
 }

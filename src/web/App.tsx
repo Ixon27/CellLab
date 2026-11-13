@@ -16,6 +16,7 @@ import {
   Plus,
   Search,
   Folder,
+  Package,
 } from 'lucide-react';
 import { api } from './api';
 import type { Settings } from './types';
@@ -37,6 +38,7 @@ import { ProtocolDetail } from './pages/ProtocolDetail';
 import { WesternList } from './pages/WesternList';
 import { WesternRun } from './pages/WesternRun';
 import { Dashboard } from './pages/Dashboard';
+import { LabProducts } from './pages/LabProducts';
 
 function ThemeToggle() {
   const dark = useResolvedTheme() === 'dark';
@@ -105,6 +107,7 @@ const NAV = [
   { href: '/western', label: 'Western blot', Icon: Rows3 },
   { href: '/protocols', label: '프로토콜', Icon: BookOpen },
   { href: '/catalog', label: '선택 목록', Icon: ListChecks },
+  { href: '/lab-products', label: '실험 용품', Icon: Package },
 ] as const;
 
 function Sidebar() {
@@ -281,6 +284,9 @@ export function App() {
           {sidebarOpen && <Sidebar />}
           <main className="min-h-0 min-w-0 flex-1 overflow-auto">
             <Switch>
+              <Route path="/lab-products">
+                <LabProducts />
+              </Route>
               <Route path="/catalog">
                 <Catalog />
               </Route>

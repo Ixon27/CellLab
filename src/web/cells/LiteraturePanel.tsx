@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useLocation } from 'wouter';
 import type { CellLineDto } from '../../shared/cell-line';
 import type { LiteratureReport } from '../../shared/literature';
 import type { EpmcHit } from '../../server/services/europepmc';
@@ -23,6 +24,7 @@ interface ReportSummary {
 const BANKS: Record<string, true> = { ATCC: true, KCLB: true, DSMZ: true, ECACC: true, JCRB: true, 'RIKEN BRC': true, CLS: true };
 export function LiteraturePanel({ line, onProfileCreated }: { line: CellLineDto; onProfileCreated(profileId: string): void }) {
   const toast = useToast();
+  const [, navigate] = useLocation();
   const bankAvailable = BANKS[line.sourceBank ?? ''] === true;
   const [providerUrl, setProviderUrl] = useState(line.providerUrl ?? '');
   const [providerText, setProviderText] = useState('');
@@ -128,6 +130,18 @@ export function LiteraturePanel({ line, onProfileCreated }: { line: CellLineDto;
             <input type="checkbox" disabled={!bankAvailable} checked={bank} onChange={(e) => setBank(e.target.checked)} className="mr-2" />
             같은 분양처 논문만
           </label>
+          {!bankAvailable && (
+            <div className="w-full rounded-lg bg-sunken p-3 text-xs text-fg-muted" data-testid="bank-filter-explainer">
+              <p>
+                {line.sourceBank
+                  ? `이 세포주의 분양처 “${line.sourceBank}”는 논문 검색용 별칭이 등록된 분양처(${Object.keys(BANKS).join(', ')})에 없어 분양처 필터를 쓸 수 없습니다. 분양처 이름을 목록의 이름으로 바꾸면 사용할 수 있습니다.`
+                  : `이 세포주에 분양처가 설정되어 있지 않아 분양처 필터를 쓸 수 없습니다. 세포주 정보에서 분양처(${Object.keys(BANKS).join(', ')})를 지정하면 같은 분양처에서 받은 논문만 검색할 수 있습니다.`}
+              </p>
+              <button className={`${btnCls} mt-2`} onClick={() => navigate(`/cells/${line.id}?tab=info`)}>
+                세포주 정보에서 분양처 설정
+              </button>
+            </div>
+          )}
           <button className={btnCls} disabled={searching} onClick={() => void searchPapers()}>
             {searching ? '검색 중…' : '논문 검색'}
           </button>

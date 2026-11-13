@@ -16,6 +16,8 @@ import {
   gelRecipe,
   loadingPlan,
   validateWesternData,
+  validateWesternLoading,
+  westernAutoRecord,
   westernMarkdown,
 } from '../src/shared/western';
 import { DEFAULT_LOADING, LOADING_PRESETS, WASH_SUMMARY, WESTERN_RECORD_FIELDS } from '../src/shared/western-defaults';
@@ -33,6 +35,26 @@ describe('Western 계산', () => {
     expect(loadingPlan(0.8, DEFAULT_LOADING)).toMatchObject({ ok: false, minConc: 1 });
     expect(loadingPlan(null, DEFAULT_LOADING)).toBeNull();
     expect(loadingPlan(0, DEFAULT_LOADING)).toBeNull();
+  });
+  it.each([
+    { proteinUg: 0, finalUl: 25, sampleBufferX: 5 },
+    { proteinUg: -1, finalUl: 25, sampleBufferX: 5 },
+    { proteinUg: Infinity, finalUl: 25, sampleBufferX: 5 },
+    { proteinUg: 20, finalUl: NaN, sampleBufferX: 5 },
+    { proteinUg: 20, finalUl: 0, sampleBufferX: 5 },
+    { proteinUg: 20, finalUl: 25, sampleBufferX: 1 },
+    { proteinUg: 20, finalUl: 25, sampleBufferX: Infinity },
+  ])('로딩 조건의 잘못된 경계 거부: %j', (loading) => {
+    expect(() => validateWesternLoading(loading)).toThrow();
+    expect(() => validateWesternData({ ...createWesternData(), loading })).toThrow();
+  });
+  it('양수 소수와 1 초과 buffer 배수를 보존하고 불가능한 조제를 내보내지 않음', () => {
+    const loading = { proteinUg: 0.0001, finalUl: 0.0001, sampleBufferX: 1.0001 };
+    expect(validateWesternLoading(loading)).toEqual(loading);
+    const data = createWesternData();
+    data.samples.push({ id: 'low', name: '저농도', concUgPerUl: 0.8, source: null });
+    expect(westernAutoRecord(data).r08).toContain('농축 또는 로딩 조건 조정 필요');
+    expect(westernAutoRecord(data).r08).not.toContain('-5.0');
   });
   it('분리겔 원문·현장 조성', () => {
     const r = gelRecipe({ kind: 'separating', pct: 10, scaleMl: 10, batches: 1, temedMultiplier: 2 });
@@ -129,6 +151,22 @@ describe('Western API', () => {
     expect(md).toContain('정량 실험');
     expect(md).toContain('8.0');
     expect((await app.request(`/api/western/${v.run.id}`)).status).toBe(200);
+    const override = { proteinUg: 30, finalUl: 20, sampleBufferX: 4 };
+    const customResponse = await app.request('/api/western', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fromBradford: { id: 'western-assay', sampleIndexes: [0] }, loading: override }),
+    });
+    expect(customResponse.status).toBe(201);
+    const custom = (await customResponse.json()) as WesternRunView;
+    expect(custom.data.loading).toEqual(override);
+    expect(custom.data.samples[0].concUgPerUl).toBeCloseTo(2.5);
+    expect(loadingPlan(custom.data.samples[0].concUgPerUl, custom.data.loading)).toMatchObject({
+      sampleUl: 12, diluentUl: 3, bufferUl: 5, finalUl: 20, ok: true,
+    });
+    expect(custom.data.record.r08).toContain('12.0 / 3.0 / 5.0');
+    expect(custom.data.record.r09).toContain('30 µg / 20 µL / 4X');
+    const persisted = await app.request(`/api/western/${custom.run.id}`);
+    expect(((await persisted.json()) as WesternRunView).data.loading).toEqual(override);
     const put = await app.request(`/api/western/${v.run.id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -143,6 +181,27 @@ describe('Western API', () => {
     expect(((await append.json()) as WesternRunView).data.samples).toHaveLength(2);
     expect((await app.request(`/api/western/${v.run.id}`, { method: 'DELETE' })).status).toBe(200);
     expect((await app.request(`/api/western/${v.run.id}`)).status).toBe(404);
+  });
+  it.each([
+    { proteinUg: 0, finalUl: 20, sampleBufferX: 5 },
+    { proteinUg: 20, finalUl: -1, sampleBufferX: 5 },
+    { proteinUg: 20, finalUl: 20, sampleBufferX: 1 },
+    { proteinUg: 20, finalUl: 20, sampleBufferX: 0 },
+    { proteinUg: '20', finalUl: 20, sampleBufferX: 5 },
+    { proteinUg: null, finalUl: 20, sampleBufferX: 5 },
+  ])('생성 시 잘못된 로딩 override 거부: %j', async (loading) => {
+    const response = await app.request('/api/western', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ loading }),
+    });
+    expect(response.status).toBe(400);
+  });
+  it('override 없는 신규 실험은 기존 기본값 유지', async () => {
+    const response = await app.request('/api/western', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+    });
+    expect(response.status).toBe(201);
+    expect(((await response.json()) as WesternRunView).data.loading).toEqual(DEFAULT_LOADING);
   });
   it('잘못된 Bradford 선택은 400', async () => {
     const res = await app.request('/api/western', {

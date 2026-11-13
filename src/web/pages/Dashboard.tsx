@@ -3,7 +3,8 @@ import { Link, useLocation } from 'wouter';
 import { ArrowUpRight, FlaskConical, Plus, RotateCw } from 'lucide-react';
 import type { LogDto } from '../../shared/cell-line';
 import { api } from '../api';
-import { smallBtnCls, primaryBtnCls } from '../components/Dialog';
+import { btnCls, primaryBtnCls } from '../components/Dialog';
+import { PageHeader } from '../components/Workbench';
 
 interface DashboardData {
   activeCultures: {
@@ -16,6 +17,7 @@ interface DashboardData {
     startedAt: string;
     daysInCulture: number;
     lastLog: LogDto | null;
+    lastConfluency: { pct: number; at: string } | null;
     daysSinceFeed: number;
     feedOverdue: boolean;
     overPassage: boolean;
@@ -40,26 +42,24 @@ export function Dashboard() {
     void load();
   }, [load]);
   return (
-    <div className="mx-auto max-w-[1440px] space-y-5 px-6 py-6 lg:px-8">
-      <header className="flex items-end justify-between gap-4">
-        <div>
-          <p className="workbench-eyebrow mb-1">
-            Lab overview · {new Date().toLocaleDateString('ko-KR', { month: 'long', day: 'numeric' })}
-          </p>
-          <h1 className="text-[20px] font-semibold tracking-tight">실험실</h1>
-          <p className="mt-1.5 text-[12px] text-fg-muted">진행 중인 배양과 다음 작업을 한눈에 확인하세요.</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button className={smallBtnCls} onClick={() => void load()}>
-            <RotateCw size={13} />
-            새로 고침
-          </button>
-          <Link href="/cells" className={primaryBtnCls}>
-            <Plus size={14} />
-            세포주 관리
-          </Link>
-        </div>
-      </header>
+    <div className="workbench-page space-y-5">
+      <PageHeader
+        eyebrow={`Lab overview · ${new Date().toLocaleDateString('ko-KR', { month: 'long', day: 'numeric' })}`}
+        title="실험실"
+        note="진행 중인 배양과 다음 작업을 한눈에 확인하세요."
+        actions={
+          <>
+            <button className={btnCls} onClick={() => void load()}>
+              <RotateCw size={13} />
+              새로 고침
+            </button>
+            <Link href="/cells" className={primaryBtnCls}>
+              <Plus size={14} />
+              세포주 관리
+            </Link>
+          </>
+        }
+      />
       {error && (
         <p role="alert" className="text-sm text-danger">
           {error}
@@ -112,7 +112,7 @@ export function Dashboard() {
                           <td className="px-3 py-2.5">{c.passage}</td>
                           <td className="px-3 py-2.5">{c.vessel}</td>
                           <td className="px-3 py-2.5">{c.daysInCulture}일</td>
-                          <td className="px-3 py-2.5">{c.lastLog?.confluencyPct != null ? `${c.lastLog.confluencyPct}%` : '미정'}</td>
+                          <td className="px-3 py-2.5">{c.lastConfluency ? <><span>{c.lastConfluency.pct}%</span><span className="block text-xs text-fg-muted">{new Date(c.lastConfluency.at).toLocaleString('ko-KR')} · 관찰 당시</span></> : '미정'}</td>
                           <td className="px-3 py-2.5">{c.daysSinceFeed}일</td>
                           <td className="px-3 py-2.5">
                             <div className="flex gap-1">

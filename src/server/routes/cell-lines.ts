@@ -1,13 +1,18 @@
 import { Hono } from 'hono';
 import { nanoid } from 'nanoid';
-import { CULTURE_FIELDS, validateProfileFields } from '../../shared/culture';
+import { CULTURE_FIELDS, normalizeFieldValue, validateProfileFields } from '../../shared/culture';
 import type { CultureProfileFields } from '../../shared/culture';
 import type { SourceRef } from '../../shared/cell-line';
-import { db, now, tx } from '../db';
-import { getLineRow, toLineDto, toProfileDto, toLotDto, toCultureDto } from '../cell-lines';
+import { isAdoptedRef, validateSourceRefs } from '../../shared/literature-adoption';
+import { parseLiteratureReport } from '../../shared/literature';
+import type { LiteratureReport } from '../../shared/literature';
+import { validateExecutionPlan } from '../../shared/culture-plan';
+import { db, now, parseJsonColumn, tx } from '../db';
+import { getLineRow, toLineDto, toProfileDto, toCultureDtos, toLotDtos } from '../cell-lines';
 import type { ProfileRow, CellLineRow, LotRow, CultureRow } from '../cell-lines';
 import { ensureOptions } from '../catalog';
 import { HttpError } from '../http-error';
+import { photoFilesForLine, removePhotoFiles } from '../photos';
 import { getCellosaurus, searchCellosaurus } from '../services/cellosaurus';
 
 export const cellLines = new Hono();
@@ -80,6 +85,40 @@ function profileRow(id: string): ProfileRow {
   const r = db.prepare('SELECT * FROM culture_profiles WHERE id=?').get(id) as ProfileRow | undefined;
   if (!r) throw new HttpError(404, '배양 조건을 찾을 수 없습니다');
   return r;
+}
+function executionPlan(raw: unknown) {
+  try { return validateExecutionPlan(raw); }
+  catch (e) { throw new HttpError(400, e instanceof Error ? e.message : '실행 계획이 올바르지 않습니다'); }
+}
+function sourceRefs(raw: unknown): SourceRef[] {
+  let refs: SourceRef[];
+  try {
+    refs = validateSourceRefs(raw);
+  } catch (e) {
+    throw new HttpError(400, e instanceof Error ? e.message : '출처 근거 형식이 올바르지 않습니다');
+  }
+  // 보고서가 아직 있으면 인용한 근거 id가 그 자료에 실제로 있는지 확인한다. 보고서가 삭제된 뒤에도 저장된 근거는 유지된다.
+  const reports = new Map<string, LiteratureReport | null>();
+  for (const ref of refs) {
+    if (!ref.reportId || !ref.sourceKey || !ref.evidenceIds) continue;
+    if (!reports.has(ref.reportId)) {
+      const row = db.prepare('SELECT content FROM literature_reports WHERE id=?').get(ref.reportId) as { content: string } | undefined;
+      reports.set(ref.reportId, row ? parseLiteratureReport(row.content) : null);
+    }
+    const report = reports.get(ref.reportId);
+    if (!report) continue;
+    const source = report.sources.find((s) => s.key === ref.sourceKey);
+    if (!source || ref.evidenceIds.some((id) => !(id in source.evidence)))
+      throw new HttpError(400, '문헌 보고서에 없는 근거 문장입니다');
+  }
+  return refs;
+}
+/** 문헌에서 채택한 근거는 그 값에 대한 것이므로, 값이 바뀌는 PUT에서 sourceRefs를 따로 보내지 않으면 바뀐 항목의 채택 근거를 함께 제거한다. */
+function withoutStaleAdoptions(row: ProfileRow, next: CultureProfileFields): SourceRef[] {
+  const previous = parseJsonColumn<CultureProfileFields>(row.fields, {});
+  return parseJsonColumn<SourceRef[]>(row.source_refs, []).filter(
+    (ref) => !isAdoptedRef(ref) || normalizeFieldValue(next[ref.field] ?? null) === normalizeFieldValue(previous[ref.field] ?? null),
+  );
 }
 function fields(raw: unknown): CultureProfileFields {
   try {
@@ -157,10 +196,8 @@ cellLines.get('/cell-lines/:id', (c) => {
     profiles: (
       db.prepare('SELECT * FROM culture_profiles WHERE cell_line_id=? ORDER BY created_at').all(id) as unknown as ProfileRow[]
     ).map(toProfileDto),
-    lots: (db.prepare('SELECT * FROM cryo_lots WHERE cell_line_id=? ORDER BY event_at').all(id) as unknown as LotRow[]).map(toLotDto),
-    cultures: (db.prepare('SELECT * FROM cultures WHERE cell_line_id=? ORDER BY started_at').all(id) as unknown as CultureRow[]).map(
-      toCultureDto,
-    ),
+    lots: toLotDtos(db.prepare('SELECT * FROM cryo_lots WHERE cell_line_id=? ORDER BY event_at').all(id) as unknown as LotRow[]),
+    cultures: toCultureDtos(db.prepare('SELECT * FROM cultures WHERE cell_line_id=? ORDER BY started_at').all(id) as unknown as CultureRow[]),
   });
 });
 cellLines.put('/cell-lines/:id', async (c) => {
@@ -175,7 +212,9 @@ cellLines.put('/cell-lines/:id', async (c) => {
 });
 cellLines.delete('/cell-lines/:id', (c) => {
   const row = getLineRow(c.req.param('id'));
+  const photoFiles = photoFilesForLine(row.id);
   db.prepare('DELETE FROM cell_lines WHERE id=?').run(row.id);
+  removePhotoFiles(photoFiles);
   return c.json({ ok: true });
 });
 cellLines.post('/cell-lines/:id/profiles', async (c) => {
@@ -185,19 +224,8 @@ cellLines.post('/cell-lines/:id/profiles', async (c) => {
   const f = fields(b.fields);
   if (!['manual', 'literature', 'provider'].includes(String(b.origin))) throw new HttpError(400, '조건 출처가 올바르지 않습니다');
   if (b.activate !== undefined && typeof b.activate !== 'boolean') throw new HttpError(400, '활성화 값이 올바르지 않습니다');
-  const refs = b.sourceRefs ?? [];
-  if (
-    !Array.isArray(refs) ||
-    refs.some(
-      (r: SourceRef) =>
-        !r ||
-        !CULTURE_FIELDS.some((d) => d.key === r.field) ||
-        typeof r.sourceLabel !== 'string' ||
-        typeof r.url !== 'string' ||
-        typeof r.quote !== 'string',
-    )
-  )
-    throw new HttpError(400, '출처 근거 형식이 올바르지 않습니다');
+  const refs = sourceRefs(b.sourceRefs ?? []);
+  const plan = executionPlan(b.executionPlan);
   const id = nanoid(12);
   const at = now();
   tx(() => {
@@ -205,21 +233,32 @@ cellLines.post('/cell-lines/:id/profiles', async (c) => {
     if (active) db.prepare('UPDATE culture_profiles SET is_active=0 WHERE cell_line_id=?').run(line.id);
     addOptions(f);
     db.prepare(
-      'INSERT INTO culture_profiles(id,cell_line_id,name,origin,fields,source_refs,is_active,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)',
-    ).run(id, line.id, name, String(b.origin), JSON.stringify(f), JSON.stringify(refs), active ? 1 : 0, at, at);
+      'INSERT INTO culture_profiles(id,cell_line_id,name,origin,fields,source_refs,execution_plan,is_active,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)',
+    ).run(id, line.id, name, String(b.origin), JSON.stringify(f), JSON.stringify(refs), plan === null ? null : JSON.stringify(plan), active ? 1 : 0, at, at);
   });
   return c.json(toProfileDto(profileRow(id)), 201);
 });
+cellLines.get('/profiles/:id', (c) => c.json(toProfileDto(profileRow(c.req.param('id')))));
 cellLines.put('/profiles/:id', async (c) => {
   const row = profileRow(c.req.param('id'));
   const b = await c.req.json<Record<string, unknown>>();
   const name = b.name === undefined ? row.name : profileName(b.name);
   const f = b.fields === undefined ? null : fields(b.fields);
+  const refs =
+    b.sourceRefs !== undefined
+      ? JSON.stringify(sourceRefs(b.sourceRefs))
+      : f
+        ? JSON.stringify(withoutStaleAdoptions(row, f))
+        : row.source_refs;
+  const plan = b.executionPlan === undefined ? row.execution_plan : executionPlan(b.executionPlan);
+  const storedPlan = typeof plan === 'string' || plan === null ? plan : JSON.stringify(plan);
   tx(() => {
     if (f) addOptions(f);
-    db.prepare('UPDATE culture_profiles SET name=?,fields=?,updated_at=? WHERE id=?').run(
+    db.prepare('UPDATE culture_profiles SET name=?,fields=?,source_refs=?,execution_plan=?,updated_at=? WHERE id=?').run(
       name,
       f ? JSON.stringify(f) : row.fields,
+      refs,
+      storedPlan,
       now(),
       row.id,
     );

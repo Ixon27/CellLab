@@ -1,6 +1,11 @@
 import { useEffect, useState } from 'react';
-import type { ProfileDto } from '../../shared/cell-line';
-import { CULTURE_FIELDS, completeMediumText } from '../../shared/culture';
+import type { ProfileDto, SourceRef } from '../../shared/cell-line';
+import type { CultureExecutionPlan } from '../../shared/culture-plan';
+import { validateExecutionPlan } from '../../shared/culture-plan';
+import { ExecutionPlanEditor } from './ExecutionPlanEditor';
+import { CULTURE_FIELDS, completeMediumText, normalizeFieldValue } from '../../shared/culture';
+import { isAdoptedRef } from '../../shared/literature-adoption';
+import { SourceRefDetails } from './SourceRefDetails';
 import type { CultureProfileFields } from '../../shared/culture';
 import { api } from '../api';
 import { OptionCombobox, OptionMultiSelect } from '../components/OptionCombobox';
@@ -23,18 +28,31 @@ export function ProfileEditor({
   const selected = profiles.find((p) => p.id === selectedId) ?? profiles[0];
   const [name, setName] = useState('');
   const [fields, setFields] = useState<CultureProfileFields>({});
+  const [executionPlan, setExecutionPlan] = useState<CultureExecutionPlan | null>(null);
+  const [sourceRefs, setSourceRefs] = useState<SourceRef[]>([]);
   const toast = useToast();
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     setName(selected?.name ?? '새 배양 조건');
     setFields(selected?.fields ?? {});
+    setExecutionPlan(selected?.executionPlan ?? null);
+    setSourceRefs(selected?.sourceRefs ?? []);
   }, [selected]);
+  // 저장된 값에서 바뀐 항목에 붙은 문헌 근거는 더 이상 그 값의 근거가 아니므로 저장할 때 제거한다.
+  const isStale = (ref: SourceRef) =>
+    isAdoptedRef(ref) && normalizeFieldValue(fields[ref.field] ?? null) !== normalizeFieldValue(selected?.fields[ref.field] ?? null);
   async function save(copy = false) {
     setBusy(true);
     try {
+      const plan = executionPlan ? validateExecutionPlan({
+        ...executionPlan,
+        steps: Object.fromEntries(Object.entries(executionPlan.steps).map(([stage, step]) => [stage, {
+          ...step, recordLabels: step.recordLabels.map((label) => label.trim()).filter(Boolean),
+        }])),
+      }) : null;
       const p = await api<ProfileDto>(selected && !copy ? `/api/profiles/${selected.id}` : `/api/cell-lines/${lineId}/profiles`, {
         method: selected && !copy ? 'PUT' : 'POST',
-        json: { name: copy ? `${name} 복제` : name, fields, ...(selected && !copy ? {} : { origin: 'manual' }) },
+        json: { name: copy ? `${name} 복제` : name, fields, sourceRefs: sourceRefs.filter((r) => !isStale(r)), executionPlan: plan, ...(selected && !copy ? {} : { origin: selected?.origin ?? 'manual' }) },
       });
       for (const f of CULTURE_FIELDS) if (f.catalog) invalidateCatalog(f.catalog);
       onChanged();
@@ -85,7 +103,7 @@ export function ProfileEditor({
         <div className="grid gap-4 sm:grid-cols-2">
           {CULTURE_FIELDS.filter((f) => f.inProfile).map((def) => {
             const v = fields[def.key];
-            const refs = selected?.sourceRefs.filter((r) => r.field === def.key) ?? [];
+            const refs = sourceRefs.filter((r) => r.field === def.key);
             return (
               <label className="grid gap-1 text-sm" key={def.key}>
                 <span>
@@ -122,6 +140,11 @@ export function ProfileEditor({
                     }
                   />
                 )}
+                {refs.filter((r) => r.reason).map((r, i) => (
+                  <p key={i} className="text-xs text-fg-muted">
+                    {isStale(r) ? '⚠ 값을 바꿨습니다. 아래 문헌 근거는 저장 시 제거됩니다 · ' : ''}채택 사유: {r.reason}
+                  </p>
+                ))}
               </label>
             );
           })}
@@ -138,6 +161,26 @@ export function ProfileEditor({
           </label>
         </div>
         <div className="rounded-lg bg-sunken p-3 text-sm">완전 배지: {completeMediumText(fields) || '미정'}</div>
+        <details className="rounded-lg border border-line p-3">
+          <summary className="cursor-pointer text-sm font-medium">기본 비교 항목의 출처 편집 ({sourceRefs.length})</summary>
+          <div className="mt-3 grid gap-3">
+            {sourceRefs.map((ref, index) => isAdoptedRef(ref) ? <fieldset key={index} className="grid gap-2 rounded-lg bg-sunken p-3">
+              <legend className="text-xs">문헌에서 채택한 근거 · {CULTURE_FIELDS.find((f) => f.key === ref.field)?.label}</legend>
+              <SourceRefDetails sourceRef={ref} />
+              {isStale(ref) && <p role="alert" className="text-xs text-warning">값을 바꿨으므로 이 문헌 근거는 저장할 때 제거됩니다.</p>}
+              <label className="grid gap-1 text-sm">채택 사유 (필수)<textarea className={inputCls} rows={2} maxLength={2000} value={ref.reason ?? ''} onChange={(e) => setSourceRefs(sourceRefs.map((r, i) => i === index ? { ...r, reason: e.target.value } : r))} /></label>
+              <button className={dangerBtnCls} onClick={() => setSourceRefs(sourceRefs.filter((_, i) => i !== index))}>근거 제거</button>
+            </fieldset> : <fieldset key={index} className="grid gap-2 rounded-lg bg-sunken p-3">
+              <legend className="text-xs">항목 근거 {index + 1}</legend>
+              <label className="grid gap-1 text-sm">비교 항목<select className={inputCls} value={ref.field} onChange={(e) => setSourceRefs(sourceRefs.map((r, i) => i === index ? { ...r, field: e.target.value as SourceRef['field'] } : r))}>{CULTURE_FIELDS.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}</select></label>
+              {(['sourceLabel', 'url', 'quote'] as const).map((key) => <label key={key} className="grid gap-1 text-sm">{{ sourceLabel: '출처 이름', url: '원문 URL (없으면 빈칸)', quote: '근거 문장·사용자 제공 보고' }[key]}<textarea className={inputCls} rows={key === 'quote' ? 3 : 1} value={ref[key]} onChange={(e) => setSourceRefs(sourceRefs.map((r, i) => i === index ? { ...r, [key]: e.target.value } : r))} /></label>)}
+              <label className="grid gap-1 text-sm">메모 (선택)<textarea className={inputCls} rows={2} maxLength={2000} value={ref.reason ?? ''} onChange={(e) => setSourceRefs(sourceRefs.map((r, i) => i === index ? { ...r, reason: e.target.value } : r))} /></label>
+              <button className={dangerBtnCls} onClick={() => setSourceRefs(sourceRefs.filter((_, i) => i !== index))}>근거 제거</button>
+            </fieldset>)}
+            <button className={btnCls} disabled={sourceRefs.length >= 500} onClick={() => setSourceRefs([...sourceRefs, { field: 'base_medium', sourceLabel: '', url: '', quote: '' }])}>항목 근거 추가</button>
+          </div>
+        </details>
+        <ExecutionPlanEditor value={executionPlan} onChange={setExecutionPlan} />
         <div className="flex flex-wrap gap-2">
           <button className={primaryBtnCls} disabled={busy} onClick={() => save()}>
             저장

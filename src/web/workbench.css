@@ -1,0 +1,238 @@
+/*
+ * Page chrome shared by every CellLab screen: page container and header, plus the
+ * step rail and numbered sections of the experiment workflows (Bradford, Western).
+ * Imported into the components layer, so utilities override these.
+ */
+.workbench-page {
+  width: 100%;
+  max-width: 1244px;
+  margin: 0 auto;
+  padding: 22px 32px 56px;
+}
+.workbench-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px 16px;
+  margin-bottom: 20px;
+}
+.workbench-head h1 {
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 26px;
+}
+.workbench-head-note {
+  max-width: 760px;
+  margin-top: 5px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--pr-fg-muted);
+}
+
+/* Experiment title edited in place: reads as a heading until hovered or focused. */
+.workbench-title {
+  /* Wide enough to stay readable; the header wraps its controls below before the title collapses. */
+  min-width: 220px;
+  flex: 1;
+  height: 34px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  padding: 0 8px;
+  margin-left: -8px;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--pr-fg);
+  outline: none;
+  transition:
+    border-color 150ms ease-out,
+    background-color 150ms ease-out,
+    box-shadow 150ms ease-out;
+}
+.workbench-title:hover {
+  border-color: var(--pr-line-strong);
+}
+.workbench-title:focus {
+  border-color: color-mix(in srgb, var(--pr-accent) 62%, transparent);
+  background: var(--pr-field-focus);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--pr-accent) 13%, transparent);
+}
+.workbench-save {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--pr-fg-muted);
+  white-space: nowrap;
+}
+.workbench-save i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--pr-fg-dim);
+}
+.workbench-save[data-state='saved'] i {
+  background: var(--pr-success);
+}
+.workbench-save[data-state='failed'] {
+  color: var(--pr-danger);
+}
+.workbench-save[data-state='failed'] i {
+  background: var(--pr-danger);
+}
+
+/* Step rail: stays in view while the page scrolls, so the next action is always named. */
+.workbench-steps {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 2px;
+  margin: 14px 0 16px;
+  padding: 4px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--pr-raised) 92%, transparent);
+  backdrop-filter: blur(20px) saturate(180%);
+  box-shadow:
+    inset 0 0 0 1px var(--pr-line),
+    var(--pr-shadow-card);
+}
+.workbench-step {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  height: 44px;
+  padding: 0 10px;
+  border-radius: 9px;
+  text-align: left;
+  transition: background-color 150ms ease-out;
+}
+.workbench-step:hover {
+  background: var(--pr-hover);
+}
+.workbench-step-n,
+.workbench-section-num {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px var(--pr-line-strong);
+  color: var(--pr-fg-muted);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.workbench-step[data-state='done'] .workbench-step-n {
+  background: var(--pr-success-soft);
+  box-shadow: none;
+  color: var(--pr-success);
+}
+.workbench-step[data-state='current'] .workbench-step-n {
+  background: var(--pr-accent);
+  box-shadow: none;
+  color: #fff;
+}
+.workbench-step-text {
+  min-width: 0;
+}
+.workbench-step-text b,
+.workbench-step-text small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.workbench-step-text b {
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 16px;
+  color: var(--pr-fg-muted);
+}
+.workbench-step:is([data-state='current'], [data-state='done']) .workbench-step-text b {
+  color: var(--pr-fg);
+}
+.workbench-step-text small {
+  font-size: 11px;
+  line-height: 14px;
+  color: var(--pr-fg-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Sections land just below the sticky rail when a step is clicked. */
+.workbench-section {
+  scroll-margin-top: 64px;
+}
+.workbench-section + .workbench-section {
+  margin-top: 14px;
+}
+.workbench-section-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  min-height: 48px;
+  padding: 10px 18px 0;
+}
+.workbench-section-head h2 {
+  font-size: 14.5px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+}
+.workbench-section-hint {
+  font-size: 12px;
+  color: var(--pr-fg-muted);
+}
+.workbench-section-body {
+  padding: 10px 18px 18px;
+}
+details.workbench-section > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 44px;
+  padding: 0 18px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  list-style: none;
+}
+details.workbench-section > summary::-webkit-details-marker {
+  display: none;
+}
+details.workbench-section > summary svg {
+  color: var(--pr-fg-dim);
+  transition: transform 150ms ease-out;
+}
+details.workbench-section[open] > summary svg {
+  transform: rotate(90deg);
+}
+
+.workbench-empty {
+  display: grid;
+  place-items: center;
+  min-height: 120px;
+  border-radius: 10px;
+  border: 1px dashed var(--pr-line-strong);
+  padding: 20px;
+  text-align: center;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--pr-fg-muted);
+}
+
+@media (max-width: 1000px) {
+  .workbench-page {
+    padding: 18px 20px 48px;
+  }
+  .workbench-step-text small {
+    display: none;
+  }
+}

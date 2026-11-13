@@ -8,6 +8,7 @@ import { literature } from './literature';
 import { bradford } from './bradford';
 import { western } from './western';
 import { lineage } from './lineage';
+import { labProducts } from './lab-products';
 
 export const api = new Hono();
 
@@ -20,3 +21,4 @@ api.route('/', literature);
 api.route('/', bradford);
 api.route('/', western);
 api.route('/', lineage);
+api.route('/', labProducts);

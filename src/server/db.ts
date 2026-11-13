@@ -1,6 +1,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { PATHS } from './config';
 import { seedBuiltins } from './seed';
+import { CULTURE_OPERATION_DDL } from './culture-operations-schema';
 
 export const db = new DatabaseSync(PATHS.db);
 
@@ -27,6 +28,11 @@ CREATE TABLE IF NOT EXISTS cell_lines(id TEXT PRIMARY KEY, name TEXT NOT NULL, c
   source_bank TEXT, catalog_no TEXT, provider_url TEXT, providers TEXT NOT NULL DEFAULT '[]', doubling_time TEXT, caution TEXT,
   biosafety TEXT, max_passage INTEGER, tags TEXT NOT NULL DEFAULT '[]', notes TEXT NOT NULL DEFAULT '',
   sop_protocol_id TEXT REFERENCES protocols(id) ON DELETE SET NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS protocol_copies(
+  protocol_id TEXT PRIMARY KEY REFERENCES protocols(id) ON DELETE CASCADE,
+  source_protocol_id TEXT NOT NULL, source_title TEXT NOT NULL, source_version TEXT NOT NULL,
+  source_provenance TEXT NOT NULL,
+  cell_line_id TEXT REFERENCES cell_lines(id) ON DELETE SET NULL);
 CREATE TABLE IF NOT EXISTS culture_profiles(id TEXT PRIMARY KEY, cell_line_id TEXT NOT NULL REFERENCES cell_lines(id) ON DELETE CASCADE,
   name TEXT NOT NULL, origin TEXT NOT NULL CHECK(origin IN ('manual','literature','provider')), fields TEXT NOT NULL,
   source_refs TEXT NOT NULL DEFAULT '[]', is_active INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
@@ -53,11 +59,33 @@ CREATE TABLE IF NOT EXISTS bradford_assays(id TEXT PRIMARY KEY, title TEXT NOT N
 CREATE TABLE IF NOT EXISTS western_runs(id TEXT PRIMARY KEY, title TEXT NOT NULL, performed_at TEXT NOT NULL,
   status TEXT NOT NULL CHECK(status IN ('planned','in_progress','done')),
   protocol_id TEXT REFERENCES protocols(id) ON DELETE SET NULL, data TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS lab_vessel_products(id TEXT PRIMARY KEY, label TEXT NOT NULL, format TEXT NOT NULL,
+  manufacturer TEXT NOT NULL DEFAULT '', catalog_no TEXT NOT NULL DEFAULT '',
+  surface_treatment TEXT NOT NULL DEFAULT 'unknown' CHECK(surface_treatment IN ('treated','untreated','unknown')),
+  wells_per_unit INTEGER NOT NULL DEFAULT 1 CHECK(wells_per_unit >= 1), area_cm2_per_well REAL,
+  medium_min_ml_per_well REAL, medium_max_ml_per_well REAL,
+  spec_status TEXT NOT NULL DEFAULT 'reference' CHECK(spec_status IN ('reference','product_confirmed')),
+  source_label TEXT NOT NULL DEFAULT '', url TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS lab_medium_products(id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL CHECK(kind IN ('base_medium','serum','antibiotic','supplement','other')), label TEXT NOT NULL,
+  manufacturer TEXT NOT NULL DEFAULT '', catalog_no TEXT NOT NULL DEFAULT '', lot_no TEXT NOT NULL DEFAULT '',
+  ingredients TEXT NOT NULL DEFAULT '[]', ingredients_confirmed INTEGER NOT NULL DEFAULT 0,
+  source_label TEXT NOT NULL DEFAULT '', url TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS lab_medium_products_kind ON lab_medium_products(kind, label);
 `);
+db.exec(CULTURE_OPERATION_DDL);
 
 db.prepare(`UPDATE jobs SET status='error', error='서버 재시작으로 중단', updated_at=? WHERE status IN ('queued','running')`).run(
   new Date().toISOString(),
 );
+
+// Additive migration: existing profiles retain their original fields and sources.
+export function migrateCultureProfiles(database: DatabaseSync): void {
+  if (!(database.prepare('PRAGMA table_info(culture_profiles)').all() as { name: string }[]).some((column) => column.name === 'execution_plan')) {
+    database.exec('ALTER TABLE culture_profiles ADD COLUMN execution_plan TEXT');
+  }
+}
+migrateCultureProfiles(db);
 
 export const now = () => new Date().toISOString();
 

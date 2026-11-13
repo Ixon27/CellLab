@@ -1,4 +1,6 @@
 @import 'tailwindcss';
+@import './controls.css' layer(components);
+@import './workbench.css' layer(components);
 
 /* Semantic experiment/reading status colors, separate from the reference materials. */
 :root {color-scheme:light;--pr-success:#2d8f64;--pr-success-soft:#2d8f641a;--pr-warning:#a97a14;--pr-warning-soft:#a97a141a;--pr-danger:#be5966;--pr-danger-soft:#be59661a;--pr-effort:#a8812f;--pr-effort-max:#ed682c;--pr-scrim:#0c101c29;}
@@ -65,6 +67,10 @@ body,
   :focus-visible {
     outline: 2px solid var(--pr-focus);
     outline-offset: 2px;
+  }
+
+  input:is([type='checkbox'], [type='radio']) {
+    accent-color: var(--pr-accent);
   }
 }
 

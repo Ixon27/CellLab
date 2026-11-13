@@ -1,12 +1,16 @@
 import { useState } from 'react';
 import type { CellLineDto, CultureDto, LogDto, LotDto, ProfileDto } from '../../../shared/cell-line';
+import type { CultureVesselUse } from '../../../shared/lab-products';
 import { api } from '../../api';
-import { CellCountCalculator } from '../../components/CellCountCalculator';
 import { Dialog, Field, inputCls, primaryBtnCls, smallBtnCls } from '../../components/Dialog';
 import { OptionCombobox } from '../../components/OptionCombobox';
+import { VesselUsePicker } from '../../components/VesselUsePicker';
 import { useToast } from '../../components/Toast';
+import { executionProfile } from '../culture-plan-state';
+import { ObservationForm } from '../operations/ObservationForm';
+import { FeedForm, FreezeForm, PassageForm } from '../operations/OperationForms';
+import { composeOperationNote, isoFromInput, localInput, PlanRecordSection } from '../operations/common';
 
-type Action = 'lot' | 'culture' | 'thaw' | 'passage' | 'freeze' | 'end' | 'log';
 interface Props {
   line: CellLineDto;
   culture?: CultureDto;
@@ -18,67 +22,54 @@ interface Props {
   onClose(): void;
   onSaved(): void;
 }
-const titles: Record<Action, string> = {
+type BasicAction = 'lot' | 'culture' | 'thaw' | 'end' | 'log';
+const titles: Record<BasicAction, string> = {
   lot: 'stock 입고(바이알)',
   culture: '배양 상태로 입고',
   thaw: '해동',
-  passage: '계대',
-  freeze: '동결',
   end: '배양 종료',
-  log: '관찰 기록',
+  log: '기타 기록',
 };
-const logLabels: Record<string, string> = {
-  observation: '관찰',
-  medium_change: '배지 교체',
-  harvest: '수확',
-  treatment: '처리',
-  mycoplasma: '마이코플라스마',
-  note: '메모',
-};
+const otherLogs = { harvest: '수확', treatment: '처리', mycoplasma: '마이코플라스마', note: '메모' };
 
-function CultureDialog({ action, ...p }: Props & { action: Action }) {
+function CultureDialog({ action, ...p }: Props & { action: BasicAction }) {
   const toast = useToast();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [label, setLabel] = useState('');
-  const [at, setAt] = useState(() => {
-    const d = new Date(p.initialLog?.at ?? p.initialAt ?? Date.now());
-    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
-  });
+  const [at, setAt] = useState(() => localInput(p.initialLog?.at ?? p.initialAt ?? Date.now()));
   const [passage, setPassage] = useState(String(p.lot?.passage ?? p.culture?.passage ?? 0));
   const [vials, setVials] = useState('1');
-  const [vessel, setVessel] = useState(p.culture?.vessel ?? 'T75');
-  const [profile, setProfile] = useState(p.profiles.find((v) => v.isActive)?.id ?? '');
+  const [vessel, setVessel] = useState('');
+  const [use, setUse] = useState<CultureVesselUse | null>(null);
+  const [profile, setProfile] = useState(executionProfile(p.profiles, p.culture).profile?.id ?? '');
   const [location, setLocation] = useState('');
   const [supplierLot, setSupplierLot] = useState('');
   const [cellsPerVial, setCellsPerVial] = useState('');
-  const [freezingMedium, setFreezingMedium] = useState('');
-  const [end, setEnd] = useState(true);
   const [status, setStatus] = useState('harvested');
-  const [splitRatio, setSplitRatio] = useState('');
-  const [children, setChildren] = useState([
-    { vessel: 'T75', label: '' },
-    { vessel: 'T75', label: '' },
-  ]);
-  const [logType, setLogType] = useState(p.initialLog?.type ?? p.logType ?? 'observation');
+  const [type, setType] = useState(p.initialLog?.type ?? 'note');
   const [note, setNote] = useState(p.initialLog?.note ?? '');
-  const [confluency, setConfluency] = useState(String(p.initialLog?.confluencyPct ?? ''));
-  const [cells, setCells] = useState(String(p.initialLog?.cellsPerMl ?? ''));
-  const [viability, setViability] = useState(String(p.initialLog?.viabilityPct ?? ''));
-  const [total, setTotal] = useState(String(p.initialLog?.totalCells ?? ''));
   const [mycoplasma, setMycoplasma] = useState(p.initialLog?.mycoplasma ?? 'pending');
   const [extra, setExtra] = useState<[string, string][]>(Object.entries(p.initialLog?.extra ?? {}));
-  const submit = async () => {
+  const [metrics, setMetrics] = useState({
+    confluencyPct: String(p.initialLog?.confluencyPct ?? ''),
+    cellsPerMl: String(p.initialLog?.cellsPerMl ?? ''),
+    viabilityPct: String(p.initialLog?.viabilityPct ?? ''),
+    totalCells: String(p.initialLog?.totalCells ?? ''),
+  });
+  const [records, setRecords] = useState<Record<string, string>>({});
+  const stage = action === 'lot' || action === 'culture' ? 'stock' : action === 'thaw' ? 'thaw' : 'feed';
+  const usedProfile =
+    action === 'culture' || action === 'thaw'
+      ? (p.profiles.find((v) => v.id === profile) ?? null)
+      : executionProfile(p.profiles, p.culture).profile;
+  async function save() {
     setBusy(true);
     setError(null);
     try {
-      const metrics = {
-        confluencyPct: confluency === '' ? null : Number(confluency),
-        cellsPerMl: cells === '' ? null : Number(cells),
-        viabilityPct: viability === '' ? null : Number(viability),
-        totalCells: total === '' ? null : Number(total),
-      };
-      const time = new Date(at).toISOString();
+      if (p.culture && p.culture.status !== 'active' && !p.initialLog) throw new Error('종료된 배양에는 새 작업을 기록할 수 없습니다');
+      const time = isoFromInput(at);
+      const savedNote = p.initialLog ? note : composeOperationNote(note, usedProfile, stage, records);
       let path: string;
       let body: Record<string, unknown>;
       if (action === 'lot') {
@@ -91,39 +82,35 @@ function CultureDialog({ action, ...p }: Props & { action: Action }) {
           location,
           supplierLot,
           receivedAt: time,
+          notes: savedNote,
         };
-      } else if (action === 'culture') {
-        path = `/api/cell-lines/${p.line.id}/cultures`;
-        body = { label, passage: Number(passage), vessel, profileId: profile || null, startedAt: time };
-      } else if (action === 'thaw') {
-        path = `/api/lots/${p.lot!.id}/thaw`;
-        body = { vials: Number(vials), passage: Number(passage), vessel, profileId: profile || null, at: time };
-      } else if (action === 'passage') {
-        path = `/api/cultures/${p.culture!.id}/passage`;
-        body = { at: time, splitRatio, ...metrics, children, keepParent: false };
-      } else if (action === 'freeze') {
-        path = `/api/cultures/${p.culture!.id}/freeze`;
+      } else if (action === 'culture' || action === 'thaw') {
+        path = action === 'culture' ? `/api/cell-lines/${p.line.id}/cultures` : `/api/lots/${p.lot!.id}/thaw`;
         body = {
+          label,
+          passage: Number(passage),
+          vessel,
+          vesselUse: use,
+          profileId: profile || null,
           at: time,
+          startedAt: time,
           vials: Number(vials),
-          cellsPerVial: cellsPerVial === '' ? null : Number(cellsPerVial),
-          freezingMedium,
-          location,
-          endCulture: end,
+          note: savedNote,
+          notes: savedNote,
         };
       } else if (action === 'end') {
         path = `/api/cultures/${p.culture!.id}/end`;
-        body = { status, at: time, note };
+        body = { status, at: time, note: savedNote };
       } else {
         path = p.initialLog ? `/api/logs/${p.initialLog.id}` : `/api/cultures/${p.culture!.id}/logs`;
         if (extra.some(([k]) => !k.trim()) || new Set(extra.map(([k]) => k.trim())).size !== extra.length)
           throw new Error('자유 항목 이름은 비어 있거나 중복될 수 없습니다');
         body = {
           at: time,
-          type: logType,
-          ...metrics,
-          note,
-          mycoplasma: logType === 'mycoplasma' ? mycoplasma : null,
+          type,
+          ...Object.fromEntries(Object.entries(metrics).map(([k, v]) => [k, v === '' ? null : Number(v)])),
+          note: savedNote,
+          mycoplasma: type === 'mycoplasma' ? mycoplasma : null,
           extra: Object.fromEntries(extra.map(([k, v]) => [k.trim(), v])),
         };
       }
@@ -132,18 +119,18 @@ function CultureDialog({ action, ...p }: Props & { action: Action }) {
       p.onSaved();
       p.onClose();
     } catch (e) {
-      setError(e instanceof Error ? e.message : '저장하지 못했습니다');
+      setError((e as Error).message);
     } finally {
       setBusy(false);
     }
-  };
+  }
   return (
     <Dialog
       title={p.initialLog ? '기록 수정' : titles[action]}
       onClose={p.onClose}
       width={680}
       footer={
-        <button className={primaryBtnCls} disabled={busy} onClick={() => void submit()}>
+        <button className={primaryBtnCls} disabled={busy} onClick={() => void save()}>
           {busy ? '저장 중…' : '저장'}
         </button>
       }
@@ -152,6 +139,17 @@ function CultureDialog({ action, ...p }: Props & { action: Action }) {
         <p role="alert" className="mb-3 text-sm text-danger">
           {error}
         </p>
+      )}
+      {!p.initialLog && (
+        <PlanRecordSection
+          profiles={p.profiles}
+          culture={p.culture}
+          profile={usedProfile}
+          stage={stage}
+          lineId={p.line.id}
+          records={records}
+          onRecords={setRecords}
+        />
       )}
       <Field label="일시">
         <input className={inputCls} type="datetime-local" value={at} onChange={(e) => setAt(e.target.value)} />
@@ -166,16 +164,26 @@ function CultureDialog({ action, ...p }: Props & { action: Action }) {
           <input className={inputCls} type="number" min="0" value={passage} onChange={(e) => setPassage(e.target.value)} />
         </Field>
       )}
-      {['lot', 'thaw', 'freeze'].includes(action) && (
+      {['lot', 'thaw'].includes(action) && (
         <Field label={`바이알 수${p.lot ? ` (남은 ${p.lot.vialsRemaining})` : ''}`}>
-          <input className={inputCls} type="number" min="1" value={vials} onChange={(e) => setVials(e.target.value)} />
+          <input
+            type="number"
+            min="1"
+            max={p.lot?.vialsRemaining}
+            className={inputCls}
+            value={vials}
+            onChange={(e) => setVials(e.target.value)}
+          />
         </Field>
       )}
-      {['culture', 'thaw'].includes(action) && (
+      {(action === 'culture' || action === 'thaw') && (
         <>
-          <Field label="배양 용기">
-            <OptionCombobox category="vessel" value={vessel} onChange={setVessel} />
-          </Field>
+          <VesselUsePicker value={use} onChange={(v) => setUse(v)} />
+          {!use && (
+            <Field label="배양 용기 (직접 입력)">
+              <OptionCombobox category="vessel" value={vessel} onChange={setVessel} />
+            </Field>
+          )}
           <Field label="배양 조건">
             <select className={inputCls} value={profile} onChange={(e) => setProfile(e.target.value)}>
               <option value="">연결하지 않음</option>
@@ -189,7 +197,7 @@ function CultureDialog({ action, ...p }: Props & { action: Action }) {
           </Field>
         </>
       )}
-      {['lot', 'freeze'].includes(action) && (
+      {action === 'lot' && (
         <>
           <Field label="바이알당 세포 수">
             <input type="number" min="0" className={inputCls} value={cellsPerVial} onChange={(e) => setCellsPerVial(e.target.value)} />
@@ -197,22 +205,9 @@ function CultureDialog({ action, ...p }: Props & { action: Action }) {
           <Field label="보관 위치">
             <input className={inputCls} value={location} onChange={(e) => setLocation(e.target.value)} />
           </Field>
-        </>
-      )}
-      {action === 'lot' && (
-        <Field label="공급자 로트">
-          <input className={inputCls} value={supplierLot} onChange={(e) => setSupplierLot(e.target.value)} />
-        </Field>
-      )}
-      {action === 'freeze' && (
-        <>
-          <Field label="동결 배지">
-            <OptionCombobox category="freezing_medium" value={freezingMedium} onChange={setFreezingMedium} />
+          <Field label="공급자 로트">
+            <input className={inputCls} value={supplierLot} onChange={(e) => setSupplierLot(e.target.value)} />
           </Field>
-          <label className="flex gap-2">
-            <input type="checkbox" checked={end} onChange={(e) => setEnd(e.target.checked)} />
-            동결 후 배양 종료
-          </label>
         </>
       )}
       {action === 'end' && (
@@ -224,144 +219,133 @@ function CultureDialog({ action, ...p }: Props & { action: Action }) {
           </select>
         </Field>
       )}
-      {action === 'passage' && (
+      {action === 'log' && (
         <>
-          <Field label="분주 비율">
-            <input className={inputCls} value={splitRatio} onChange={(e) => setSplitRatio(e.target.value)} />
+          <Field label="기록 종류">
+            <select className={inputCls} value={type} onChange={(e) => setType(e.target.value as LogDto['type'])}>
+              {Object.entries(otherLogs).map(([k, v]) => (
+                <option key={k} value={k}>
+                  {v}
+                </option>
+              ))}
+            </select>
           </Field>
-          <Field label="자식 배양 수 (1–24)">
-            <input
-              className={inputCls}
-              type="number"
-              min="1"
-              max="24"
-              value={children.length}
-              onChange={(e) => {
-                const n = Math.max(1, Math.min(24, Number(e.target.value) || 1));
-                setChildren((a) => Array.from({ length: n }, (_, i) => a[i] ?? { vessel: 'T75', label: '' }));
-              }}
-            />
-          </Field>
-          {children.map((child, i) => (
-            <div key={i} className="mb-3 grid grid-cols-2 gap-3">
-              <Field label={`자식 ${String.fromCharCode(65 + i)} 용기`}>
-                <OptionCombobox
-                  category="vessel"
-                  value={child.vessel}
-                  onChange={(v) => setChildren((a) => a.map((c, j) => (i === j ? { ...c, vessel: v } : c)))}
-                />
-              </Field>
-              <Field label="라벨 (자동 생성)">
+          <div className="grid grid-cols-2 gap-3">
+            {Object.entries({
+              confluencyPct: 'Confluency (%)',
+              cellsPerMl: '세포 농도 (cells/mL)',
+              viabilityPct: '생존율 (%)',
+              totalCells: '총 세포 수',
+            }).map(([key, label]) => (
+              <Field key={key} label={label}>
                 <input
+                  type="number"
+                  min="0"
                   className={inputCls}
-                  value={child.label}
-                  onChange={(e) => setChildren((a) => a.map((c, j) => (i === j ? { ...c, label: e.target.value } : c)))}
+                  value={metrics[key as keyof typeof metrics]}
+                  onChange={(e) => setMetrics((v) => ({ ...v, [key]: e.target.value }))}
                 />
               </Field>
-            </div>
-          ))}
-          <CellCountCalculator
-            vessel={children[0].vessel}
-            onApply={(v) => {
-              setCells(String(v.cellsPerMl));
-              setViability(String(v.viabilityPct ?? ''));
-              setTotal(String(v.totalCells));
-            }}
-          />
-        </>
-      )}
-      {action === 'log' && (
-        <Field label="기록 종류">
-          <select className={inputCls} value={logType} onChange={(e) => setLogType(e.target.value as LogDto['type'])}>
-            {Object.entries(logLabels).map(([k, v]) => (
-              <option key={k} value={k}>
-                {v}
-              </option>
             ))}
-          </select>
-        </Field>
-      )}
-      {(action === 'log' || action === 'passage') && (
-        <div className="mt-3 grid grid-cols-2 gap-3">
-          {[
-            { label: 'Confluency (%)', value: confluency, set: setConfluency },
-            { label: '세포 농도 (cells/mL)', value: cells, set: setCells },
-            { label: '생존율 (%)', value: viability, set: setViability },
-            { label: '총 세포 수', value: total, set: setTotal },
-          ].map((f) => (
-            <Field key={f.label} label={f.label}>
-              <input className={inputCls} type="number" min="0" value={f.value} onChange={(e) => f.set(e.target.value)} />
-            </Field>
-          ))}
-        </div>
-      )}
-      {action === 'log' && (
-        <>
-          {logType === 'mycoplasma' && (
+          </div>
+          {type === 'mycoplasma' && (
             <Field label="검사 결과">
-              <select
-                className={inputCls}
-                value={mycoplasma}
-                onChange={(e) => setMycoplasma(e.target.value as NonNullable<LogDto['mycoplasma']>)}
-              >
+              <select className={inputCls} value={mycoplasma} onChange={(e) => setMycoplasma(e.target.value as typeof mycoplasma)}>
                 <option value="negative">음성</option>
                 <option value="positive">양성</option>
                 <option value="pending">검사 중</option>
               </select>
             </Field>
           )}
-          <h3 className="mb-2 text-sm font-medium">자유 항목</h3>
           {extra.map(([k, v], i) => (
             <div key={i} className="mb-2 flex gap-2">
               <input
                 aria-label="항목 이름"
                 className={inputCls}
                 value={k}
-                onChange={(e) => setExtra((a) => a.map((r, j) => (i === j ? [e.target.value, r[1]] : r)))}
+                onChange={(e) => setExtra((a) => a.map((r, j) => (j === i ? [e.target.value, r[1]] : r)))}
               />
               <input
                 aria-label="항목 값"
                 className={inputCls}
                 value={v}
-                onChange={(e) => setExtra((a) => a.map((r, j) => (i === j ? [r[0], e.target.value] : r)))}
+                onChange={(e) => setExtra((a) => a.map((r, j) => (j === i ? [r[0], e.target.value] : r)))}
               />
-              <button className={smallBtnCls} onClick={() => setExtra((a) => a.filter((_, j) => j !== i))}>
+              <button className={smallBtnCls} onClick={() => setExtra((a) => a.filter((_, j) => i !== j))}>
                 삭제
               </button>
             </div>
           ))}
           <button className={smallBtnCls} onClick={() => setExtra((a) => [...a, ['', '']])}>
-            항목 추가
+            자유 항목 추가
           </button>
         </>
       )}
-      {(action === 'log' || action === 'end') && (
-        <Field label="메모">
-          <textarea className={inputCls} value={note} onChange={(e) => setNote(e.target.value)} />
-        </Field>
-      )}
+      <Field label="메모">
+        <textarea className={inputCls} value={note} onChange={(e) => setNote(e.target.value)} />
+      </Field>
     </Dialog>
   );
 }
 
-export function ReceiveLotDialog(props: Props) {
-  return <CultureDialog {...props} action="lot" />;
+export function ReceiveLotDialog(p: Props) {
+  return <CultureDialog {...p} action="lot" />;
 }
-export function ReceiveCultureDialog(props: Props) {
-  return <CultureDialog {...props} action="culture" />;
+export function ReceiveCultureDialog(p: Props) {
+  return <CultureDialog {...p} action="culture" />;
 }
-export function ThawDialog(props: Props) {
-  return <CultureDialog {...props} action="thaw" />;
+export function ThawDialog(p: Props) {
+  return <CultureDialog {...p} action="thaw" />;
 }
-export function PassageDialog(props: Props) {
-  return <CultureDialog {...props} action="passage" />;
+export function EndCultureDialog(p: Props) {
+  return <CultureDialog {...p} action="end" />;
 }
-export function FreezeDialog(props: Props) {
-  return <CultureDialog {...props} action="freeze" />;
+export function PassageDialog(p: Props) {
+  return p.culture ? (
+    <Dialog title="계대 · 새 용기에 접종" width={760} onClose={p.onClose}>
+      <PassageForm
+        {...p}
+        culture={p.culture}
+        onSaved={() => {
+          p.onSaved();
+          p.onClose();
+        }}
+      />
+    </Dialog>
+  ) : null;
 }
-export function EndCultureDialog(props: Props) {
-  return <CultureDialog {...props} action="end" />;
+export function FreezeDialog(p: Props) {
+  return p.culture ? (
+    <Dialog title="초기 스탁 · 동결 배분" width={760} onClose={p.onClose}>
+      <FreezeForm
+        {...p}
+        culture={p.culture}
+        onSaved={() => {
+          p.onSaved();
+          p.onClose();
+        }}
+      />
+    </Dialog>
+  ) : null;
 }
-export function LogDialog(props: Props) {
-  return <CultureDialog {...props} action="log" />;
+export function LogDialog(p: Props) {
+  const type = p.initialLog?.type ?? p.logType ?? 'observation';
+  if (!p.culture) return null;
+  if (type !== 'observation' && type !== 'medium_change') return <CultureDialog {...p} action="log" />;
+  return (
+    <Dialog title={type === 'observation' ? '관찰 · 형태·사진' : '배지 교체 · 추가'} width={680} onClose={p.onClose}>
+      {type === 'observation' ? (
+        <ObservationForm {...p} culture={p.culture} onComplete={p.onClose} />
+      ) : (
+        <FeedForm
+          {...p}
+          culture={p.culture}
+          onSaved={() => {
+            p.onSaved();
+            p.onClose();
+          }}
+        />
+      )}
+    </Dialog>
+  );
 }
