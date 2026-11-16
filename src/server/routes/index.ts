@@ -9,6 +9,7 @@ import { bradford } from './bradford';
 import { western } from './western';
 import { lineage } from './lineage';
 import { labProducts } from './lab-products';
+import { notebook } from './notebook';
 
 export const api = new Hono();
 
@@ -22,3 +23,4 @@ api.route('/', bradford);
 api.route('/', western);
 api.route('/', lineage);
 api.route('/', labProducts);
+api.route('/', notebook);

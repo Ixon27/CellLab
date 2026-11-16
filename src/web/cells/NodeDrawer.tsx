@@ -7,6 +7,7 @@ import { FEED_MODE_LABELS, RESERVED_EXTRA_KEYS } from '../../shared/culture-oper
 import { VesselUsePicker } from '../components/VesselUsePicker';
 import { PhotoStrip } from './operations/ObservationForm';
 import { LotRecoveryPanel } from './operations/LotRecoveryPanel';
+import { ProtocolRunView } from './ProtocolRun';
 import { api } from '../api';
 import { Field, inputCls, primaryBtnCls, smallBtnCls } from '../components/Dialog';
 import { OptionCombobox } from '../components/OptionCombobox';
@@ -243,6 +244,11 @@ export function NodeDrawer({
                 </p>
               ))}
               <p className="mt-1 whitespace-pre-wrap">{l.note}</p>
+              {l.protocolRun && (
+                <div className="mt-2">
+                  <ProtocolRunView run={l.protocolRun} />
+                </div>
+              )}
               {l.type !== 'passage' && l.type !== 'freeze' && (
                 <div className="mt-2 flex gap-2">
                   <button

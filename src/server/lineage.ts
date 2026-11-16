@@ -21,6 +21,7 @@ import { activeProfileRow, getLineRow, toCultureDto, toLogDto, toLogDtos, toLotD
 import { db, now, parseJsonColumn, tx } from './db';
 import { HttpError } from './http-error';
 import { getMediumProduct, getVesselProduct } from './lab-products';
+import { attachProtocolRun } from './protocol-runs';
 
 export type LineageInput = Record<string, unknown>;
 export const LOW_VIAL_THRESHOLD = 2;
@@ -148,11 +149,12 @@ function insertCulture(
   label: string,
   parentCulture: string | null = null,
   parentLot: string | null = null,
+  createdAt: string = now(),
 ) {
   const id = nanoid(12);
   db.prepare(
     "INSERT INTO cultures(id,cell_line_id,parent_culture_id,parent_lot_id,profile_id,label,passage,vessel,status,started_at,created_at) VALUES(?,?,?,?,?,?,?,?,'active',?,?)",
-  ).run(id, lineId, parentCulture, parentLot, profileId, label, passage, spec.vessel, at, now());
+  ).run(id, lineId, parentCulture, parentLot, profileId, label, passage, spec.vessel, at, createdAt);
   if (spec.resolved) saveUse(id, spec.resolved);
   return toCultureDto(getCulture(id));
 }
@@ -372,7 +374,9 @@ export function addLog(cultureId: string, b: LineageInput) {
     // Feeding never touches the passage number: it only appends a log.
     const latest = db.prepare("SELECT MAX(at) AS at FROM culture_logs WHERE culture_id=? AND type='medium_change'").get(cultureId) as { at: string | null };
     const historical = latest.at !== null && eventTime(b.at) < latest.at;
-    return insertLog(cultureId, b, { currentMediumMl: historical ? null : use?.mediumMl ?? null });
+    const log = insertLog(cultureId, b, { currentMediumMl: historical ? null : use?.mediumMl ?? null });
+    attachProtocolRun([log.id], cultureId, b.protocolRun);
+    return toLogDto(getLog(log.id));
   });
 }
 
@@ -469,6 +473,7 @@ export function receiveCulture(lineId: string, b: LineageInput) {
     return { culture: toCultureDto(getCulture(culture.id)), warnings: [...warnings(lineId, p), ...(spec.resolved?.warnings ?? [])] };
   });
 }
+/** A thaw seeds `cultures` (1–24 flasks/dishes) from one event; the old single shape (`vessel`/`vesselUse`/`label` at top level) still works. */
 export function thawLot(lotId: string, b: LineageInput) {
   return tx(() => {
     const lot = getLot(lotId);
@@ -476,26 +481,49 @@ export function thawLot(lotId: string, b: LineageInput) {
     if (lot.vials_remaining < vials) throw new HttpError(409, '남은 바이알이 없습니다');
     const p = numeric(b.passage ?? lot.passage ?? 0, 'Passage', 0, Number.MAX_SAFE_INTEGER, true);
     const at = eventTime(b.at);
-    const spec = vesselSpec(b);
-    const count = db.prepare('SELECT COUNT(*) AS n FROM cultures WHERE parent_lot_id=?').get(lotId);
-    const n = Number(count?.n ?? 0) + 1;
-    const culture = insertCulture(
-      lot.cell_line_id,
-      p,
-      spec,
-      profileFor(lot.cell_line_id, b.profileId),
-      at,
-      `${getLineRow(lot.cell_line_id).name}-P${p}-T${n}`,
-      null,
-      lotId,
-    );
-    db.prepare('UPDATE cryo_lots SET vials_remaining=vials_remaining-? WHERE id=?').run(vials, lotId);
+    let targets: Record<string, unknown>[];
+    if (b.cultures === undefined) targets = [b];
+    else {
+      if (!Array.isArray(b.cultures) || b.cultures.length < 1 || b.cultures.length > 24)
+        throw new HttpError(400, '해동 후 배양 용기는 1–24개여야 합니다');
+      targets = b.cultures.map((raw) => record(raw, '배양 용기 정보'));
+    }
+    const specs = targets.map((t) => vesselSpec(t));
+    const labels = targets.map((t) => text(t.label, '라벨'));
     const note = text(b.note, '메모', false, 10000);
-    insertLog(culture.id, { at, type: 'note', note: [`해동 (${lot.label}, ${vials} vial)`, note].filter(Boolean).join('\n\n') }, { internal: true });
+    const profileId = profileFor(lot.cell_line_id, b.profileId);
+    // Thaw-event number: all cultures of one thaw share one created_at, so the number of distinct created_at values
+    // among the lot's thawed cultures is the number of earlier thaw events. (Counting cultures would overcount a split thaw;
+    // started_at is user-entered and may repeat.) A new event's created_at is bumped past any existing one so it stays unique.
+    const existing = db.prepare('SELECT DISTINCT created_at FROM cultures WHERE parent_lot_id=?').all(lotId).map((r) => String(r.created_at));
+    const n = existing.length + 1;
+    let createdAt = now();
+    while (existing.includes(createdAt)) createdAt = new Date(Date.parse(createdAt) + 1).toISOString();
+    const lineName = getLineRow(lot.cell_line_id).name;
+    const base = `${lineName}-P${p}-T${n}`;
+    const created = targets.map((_, i) => {
+      const culture = insertCulture(
+        lot.cell_line_id,
+        p,
+        specs[i],
+        profileId,
+        at,
+        labels[i] || (targets.length === 1 ? base : `${base}-${String.fromCharCode(65 + i)}`),
+        null,
+        lotId,
+        createdAt,
+      );
+      const head = `해동 (${lot.label}, ${vials} vial)${targets.length > 1 ? ` · 용기 ${i + 1}/${targets.length}` : ''}`;
+      const log = insertLog(culture.id, { at, type: 'note', note: [head, note].filter(Boolean).join('\n\n') }, { internal: true });
+      attachProtocolRun([log.id], culture.id, b.protocolRun);
+      return culture;
+    });
+    db.prepare('UPDATE cryo_lots SET vials_remaining=vials_remaining-? WHERE id=?').run(vials, lotId);
     return {
-      culture: toCultureDto(getCulture(culture.id)),
+      culture: toCultureDto(getCulture(created[0].id)),
+      cultures: created.map((c) => toCultureDto(getCulture(c.id))),
       lot: toLotDto(getLot(lotId)),
-      warnings: [...warnings(lot.cell_line_id, p), ...spec.resolved?.warnings ?? []],
+      warnings: [...warnings(lot.cell_line_id, p), ...specs.flatMap((s) => s.resolved?.warnings ?? [])],
     };
   });
 }
@@ -569,11 +597,12 @@ export function passageCulture(cultureId: string, b: LineageInput) {
     const extra: Record<string, string> = { splitRatio: text(b.splitRatio, '분주 비율'), childCount: String(children.length) };
     if (reagent) extra.dissociationReagent = reagent;
     if (seededTotal !== null) extra.seededCells = String(seededTotal);
-    insertLog(
+    const passageLog = insertLog(
       cultureId,
       { at, type: 'passage', confluencyPct: b.confluencyPct, cellsPerMl, viabilityPct: b.viabilityPct, totalCells, note: b.note, mycoplasma: null, extra },
       { internal: true },
     );
+    attachProtocolRun([passageLog.id], cultureId, b.protocolRun);
     if (!keep) db.prepare("UPDATE cultures SET status='split',ended_at=? WHERE id=?").run(at, cultureId);
     return { parent: toCultureDto(getCulture(cultureId)), children, warnings: allWarnings };
   });
@@ -647,7 +676,7 @@ export function freezeCulture(cultureId: string, b: LineageInput) {
     );
     upsertLotDetails(lot.id, { freezePlan, representativeThaw: thawPlan, recovery: { status: 'unverified', observedAt: null, note: '' } });
     const note = text(b.note, '메모', false, 10000);
-    insertLog(
+    const freezeLog = insertLog(
       cultureId,
       {
         at,
@@ -656,6 +685,7 @@ export function freezeCulture(cultureId: string, b: LineageInput) {
       },
       { internal: true },
     );
+    attachProtocolRun([freezeLog.id], cultureId, b.protocolRun);
     if (end) db.prepare("UPDATE cultures SET status='frozen',ended_at=? WHERE id=?").run(at, cultureId);
     return { lot: toLotDto(getLot(lot.id)), culture: toCultureDto(getCulture(cultureId)) };
   });

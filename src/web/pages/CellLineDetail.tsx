@@ -9,28 +9,27 @@ import type { LineForm } from '../cells/CellLineInfoForm';
 import { ProfileEditor } from '../cells/ProfileEditor';
 import { LineageView } from '../cells/LineageView';
 import { LiteraturePanel } from '../cells/LiteraturePanel';
-import { SopPanel } from '../cells/SopPanel';
-import { CultureWorkbench } from '../cells/CultureWorkbench';
+import { CellProtocolsPanel } from '../cells/CellProtocolsPanel';
 import { CurrentCultureSummary } from '../cells/CurrentCultureSummary';
+import { NotebookExportDialog } from '../cells/NotebookExportDialog';
 const tabs = [
-  ['execution', '실행 안내'],
   ['lineage', '계보·기록'],
-  ['info', '정보'],
+  ['protocols', '프로토콜'],
   ['profiles', '배양 조건'],
   ['literature', '문헌·분양처 비교'],
-  ['sop', '배양 SOP'],
+  ['info', '정보'],
 ] as const;
 export function CellLineDetail({ id }: { id: string }) {
   const [detail, setDetail] = useState<CellLineDetailDto | null>(null);
   const [form, setForm] = useState<LineForm | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [confirm, setConfirm] = useState('');
   const [busy, setBusy] = useState(false);
   const [, navigate] = useLocation();
   const search = useSearch();
   const params = new URLSearchParams(search);
-  const tab = tabs.some(([key]) => key === params.get('tab')) ? params.get('tab')! :
-    detail?.profiles.some((p) => p.isActive && p.executionPlan) ? 'execution' : 'lineage';
+  const tab = tabs.find(([key]) => key === params.get('tab'))?.[0] ?? 'lineage';
   const toast = useToast();
   const reload = useCallback(() => {
     api<CellLineDetailDto>(`/api/cell-lines/${id}`)
@@ -135,9 +134,14 @@ export function CellLineDetail({ id }: { id: string }) {
             <strong>{detail.lots.reduce((sum, l) => sum + l.vialsRemaining, 0)}</strong>
             <span>보관 바이알</span>
           </div>
-          <button className={btnCls} onClick={() => { setConfirm(''); setDeleting(true); }}>
-            관리 · 세포주 삭제
-          </button>
+          <div className="cell-detail-actions">
+            <button className={primaryBtnCls} onClick={() => setExporting(true)}>
+              실험노트 내보내기
+            </button>
+            <button className={btnCls} onClick={() => { setConfirm(''); setDeleting(true); }}>
+              관리 · 세포주 삭제
+            </button>
+          </div>
         </div>
       </header>
       {detail.line.caution && <div className="rounded-lg bg-danger-soft p-3 text-danger">{detail.line.caution}</div>}
@@ -149,7 +153,6 @@ export function CellLineDetail({ id }: { id: string }) {
           </button>
         ))}
       </nav>
-      {tab === 'execution' && <CultureWorkbench detail={detail} onChanged={reload} />}
       {tab === 'info' && (
         <>
           <CellLineInfoForm value={form} onChange={setForm} />
@@ -197,7 +200,16 @@ export function CellLineDetail({ id }: { id: string }) {
           onChanged={reload}
         />
       )}{' '}
-      {tab === 'sop' && <SopPanel line={detail.line} profiles={detail.profiles} onChanged={reload} />}{' '}
+      {tab === 'protocols' && (
+        <CellProtocolsPanel
+          line={detail.line}
+          profiles={detail.profiles}
+          selected={params.get('protocol')}
+          onSelect={(protocol) => navigate(`/cells/${id}?tab=protocols&protocol=${encodeURIComponent(protocol)}`, { replace: true })}
+          onChanged={reload}
+        />
+      )}
+      {exporting && <NotebookExportDialog line={detail.line} cultures={detail.cultures} onClose={() => setExporting(false)} />}
       {deleting && (
         <Dialog
           title="세포주 삭제"

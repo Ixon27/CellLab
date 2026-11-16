@@ -74,6 +74,23 @@ CREATE TABLE IF NOT EXISTS lab_medium_products(id TEXT PRIMARY KEY,
 CREATE INDEX IF NOT EXISTS lab_medium_products_kind ON lab_medium_products(kind, label);
 `);
 db.exec(CULTURE_OPERATION_DDL);
+db.exec(`
+CREATE TABLE IF NOT EXISTS cell_protocols(
+  protocol_id TEXT PRIMARY KEY REFERENCES protocols(id) ON DELETE CASCADE,
+  cell_line_id TEXT NOT NULL REFERENCES cell_lines(id) ON DELETE CASCADE,
+  folder TEXT NOT NULL CHECK(folder IN ('general','thaw','feed','passage','freeze','treatment')),
+  sort INTEGER NOT NULL DEFAULT 0);
+CREATE INDEX IF NOT EXISTS cell_protocols_line ON cell_protocols(cell_line_id, folder, sort);
+CREATE TABLE IF NOT EXISTS culture_log_protocols(
+  log_id TEXT PRIMARY KEY REFERENCES culture_logs(id) ON DELETE CASCADE,
+  protocol_id TEXT REFERENCES protocols(id) ON DELETE SET NULL,
+  title TEXT NOT NULL, version TEXT NOT NULL, protocol_updated_at TEXT NOT NULL,
+  steps TEXT NOT NULL, created_at TEXT NOT NULL);
+-- Earlier per-line SOP copies become that line's general protocols.
+INSERT OR IGNORE INTO cell_protocols(protocol_id,cell_line_id,folder,sort)
+  SELECT protocol_id,cell_line_id,'general',0 FROM protocol_copies
+  WHERE cell_line_id IS NOT NULL AND cell_line_id IN (SELECT id FROM cell_lines);
+`);
 
 db.prepare(`UPDATE jobs SET status='error', error='서버 재시작으로 중단', updated_at=? WHERE status IN ('queued','running')`).run(
   new Date().toISOString(),

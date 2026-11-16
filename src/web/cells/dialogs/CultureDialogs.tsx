@@ -10,6 +10,8 @@ import { executionProfile } from '../culture-plan-state';
 import { ObservationForm } from '../operations/ObservationForm';
 import { FeedForm, FreezeForm, PassageForm } from '../operations/OperationForms';
 import { composeOperationNote, isoFromInput, localInput, PlanRecordSection } from '../operations/common';
+import type { ProtocolRunInput } from '../../../shared/protocol-run';
+import { ProtocolRunSection } from '../ProtocolRun';
 
 interface Props {
   line: CellLineDto;
@@ -31,6 +33,12 @@ const titles: Record<BasicAction, string> = {
   log: '기타 기록',
 };
 const otherLogs = { harvest: '수확', treatment: '처리', mycoplasma: '마이코플라스마', note: '메모' };
+interface ThawTarget {
+  vessel: string;
+  use: CultureVesselUse | null;
+  label: string;
+}
+const newThawTarget = (): ThawTarget => ({ vessel: '', use: null, label: '' });
 
 function CultureDialog({ action, ...p }: Props & { action: BasicAction }) {
   const toast = useToast();
@@ -42,6 +50,7 @@ function CultureDialog({ action, ...p }: Props & { action: BasicAction }) {
   const [vials, setVials] = useState('1');
   const [vessel, setVessel] = useState('');
   const [use, setUse] = useState<CultureVesselUse | null>(null);
+  const [thawTargets, setThawTargets] = useState<ThawTarget[]>([newThawTarget()]);
   const [profile, setProfile] = useState(executionProfile(p.profiles, p.culture).profile?.id ?? '');
   const [location, setLocation] = useState('');
   const [supplierLot, setSupplierLot] = useState('');
@@ -58,11 +67,16 @@ function CultureDialog({ action, ...p }: Props & { action: BasicAction }) {
     totalCells: String(p.initialLog?.totalCells ?? ''),
   });
   const [records, setRecords] = useState<Record<string, string>>({});
+  const [protocolRun, setProtocolRun] = useState<ProtocolRunInput | null>(null);
   const stage = action === 'lot' || action === 'culture' ? 'stock' : action === 'thaw' ? 'thaw' : 'feed';
   const usedProfile =
     action === 'culture' || action === 'thaw'
       ? (p.profiles.find((v) => v.id === profile) ?? null)
       : executionProfile(p.profiles, p.culture).profile;
+  // Only thaw and other logs create a record a protocol can attach to; its variables fill like the server's (linked, else active set).
+  const runFolder = p.initialLog ? null : action === 'thaw' ? 'thaw' : action === 'log' ? 'treatment' : null;
+  const runProfile = usedProfile ?? p.profiles.find((v) => v.isActive) ?? null;
+  const patchTarget = (i: number, change: Partial<ThawTarget>) => setThawTargets((old) => old.map((t, j) => (j === i ? { ...t, ...change } : t)));
   async function save() {
     setBusy(true);
     setError(null);
@@ -87,16 +101,19 @@ function CultureDialog({ action, ...p }: Props & { action: BasicAction }) {
       } else if (action === 'culture' || action === 'thaw') {
         path = action === 'culture' ? `/api/cell-lines/${p.line.id}/cultures` : `/api/lots/${p.lot!.id}/thaw`;
         body = {
-          label,
           passage: Number(passage),
-          vessel,
-          vesselUse: use,
           profileId: profile || null,
           at: time,
           startedAt: time,
-          vials: Number(vials),
           note: savedNote,
           notes: savedNote,
+          ...(action === 'culture'
+            ? { label, vessel, vesselUse: use }
+            : {
+                vials: Number(vials),
+                cultures: thawTargets.map((t) => ({ label: t.label, vessel: t.vessel, vesselUse: t.use })),
+                protocolRun,
+              }),
         };
       } else if (action === 'end') {
         path = `/api/cultures/${p.culture!.id}/end`;
@@ -112,6 +129,7 @@ function CultureDialog({ action, ...p }: Props & { action: BasicAction }) {
           note: savedNote,
           mycoplasma: type === 'mycoplasma' ? mycoplasma : null,
           extra: Object.fromEntries(extra.map(([k, v]) => [k.trim(), v])),
+          ...(p.initialLog ? {} : { protocolRun }),
         };
       }
       const response = await api<{ warnings?: string[] }>(path, { method: p.initialLog ? 'PUT' : 'POST', json: body });
@@ -151,6 +169,7 @@ function CultureDialog({ action, ...p }: Props & { action: BasicAction }) {
           onRecords={setRecords}
         />
       )}
+      {runFolder && <ProtocolRunSection line={p.line} profile={runProfile} folder={runFolder} value={protocolRun} onChange={setProtocolRun} />}
       <Field label="일시">
         <input className={inputCls} type="datetime-local" value={at} onChange={(e) => setAt(e.target.value)} />
       </Field>
@@ -176,7 +195,37 @@ function CultureDialog({ action, ...p }: Props & { action: BasicAction }) {
           />
         </Field>
       )}
-      {(action === 'culture' || action === 'thaw') && (
+      {action === 'thaw' && (
+        <fieldset className="mb-4 rounded-lg border border-line p-3">
+          <legend className="px-1 text-sm font-medium">해동 후 나눠 담을 용기</legend>
+          <p className="mb-3 text-sm text-fg-muted">
+            바이알 {Number(vials) || 0}개 해동 → 용기 {thawTargets.length}개
+          </p>
+          {thawTargets.map((t, i) => (
+            <div key={i} className="mb-3 rounded-md border border-line p-3">
+              <div className="mb-2 text-sm font-medium">용기 {i + 1}</div>
+              <VesselUsePicker value={t.use} onChange={(use) => patchTarget(i, { use })} />
+              {!t.use && (
+                <Field label={`용기 ${i + 1} (직접 입력)`}>
+                  <OptionCombobox category="vessel" value={t.vessel} onChange={(v) => patchTarget(i, { vessel: v })} />
+                </Field>
+              )}
+              <Field label="라벨 (비우면 자동 생성)">
+                <input className={inputCls} value={t.label} onChange={(e) => patchTarget(i, { label: e.target.value })} />
+              </Field>
+              {thawTargets.length > 1 && (
+                <button type="button" className={smallBtnCls} onClick={() => setThawTargets((old) => old.filter((_, j) => j !== i))}>
+                  용기 {i + 1} 삭제
+                </button>
+              )}
+            </div>
+          ))}
+          <button type="button" className={smallBtnCls} disabled={thawTargets.length >= 24} onClick={() => setThawTargets((old) => [...old, newThawTarget()])}>
+            용기 추가
+          </button>
+        </fieldset>
+      )}
+      {action === 'culture' && (
         <>
           <VesselUsePicker value={use} onChange={(v) => setUse(v)} />
           {!use && (
@@ -184,6 +233,10 @@ function CultureDialog({ action, ...p }: Props & { action: BasicAction }) {
               <OptionCombobox category="vessel" value={vessel} onChange={setVessel} />
             </Field>
           )}
+        </>
+      )}
+      {(action === 'culture' || action === 'thaw') && (
+        <>
           <Field label="배양 조건">
             <select className={inputCls} value={profile} onChange={(e) => setProfile(e.target.value)}>
               <option value="">연결하지 않음</option>

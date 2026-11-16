@@ -16,8 +16,8 @@ const groups = [
   ['unresolved', '미확정 · 조건부'],
   ['none', '근거 미등록'],
 ] as const;
-export function PlanConditions({ plan, stage }: { plan: CultureExecutionPlan; stage?: PlanStage }) {
-  const conditions = stage ? stageReadiness(plan, stage).conditions : plan.conditions;
+function PlanConditions({ plan, stage }: { plan: CultureExecutionPlan; stage: PlanStage }) {
+  const conditions = stageReadiness(plan, stage).conditions;
   return (
     <div className="space-y-4">
       {groups.map(([kind, title]) => {
@@ -170,12 +170,12 @@ export function CulturePlanGuide({
   const plan = profile?.executionPlan;
   if (!plan)
     return (
-      <aside className="mb-4 rounded-xl border border-line p-4 text-sm">
-        <p>실행 계획 미등록 · 일반 SOP는 검증되지 않은 참고 자료이며 이 단계의 실행 지침을 대신하지 않습니다.</p>
+      <p className="mb-3 text-xs text-fg-muted">
+        이 단계의 실행 계획이 없습니다 ·{' '}
         <Link className="text-accent" href={`/cells/${lineId}?tab=profiles`}>
-          배양 조건과 실행 계획 설정
+          배양 조건에서 설정
         </Link>
-      </aside>
+      </p>
     );
   const state = stageReadiness(plan, stage);
   return (

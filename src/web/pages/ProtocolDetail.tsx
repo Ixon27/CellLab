@@ -130,8 +130,11 @@ export function ProtocolDetail({ id }: { id: string }) {
     <div className="workbench-page space-y-5">
       <header className="workbench-head !mb-0 !items-start">
         <div className="min-w-0">
-          <Link href="/protocols" className="mb-1.5 inline-flex items-center gap-1 text-[12px] text-fg-muted hover:text-fg">
-            <ArrowLeft size={13} aria-hidden /> 프로토콜 목록
+          <Link
+            href={doc.provenance.cellLineId ? `/cells/${doc.provenance.cellLineId}?tab=protocols&protocol=${doc.id}` : '/protocols'}
+            className="mb-1.5 inline-flex items-center gap-1 text-[12px] text-fg-muted hover:text-fg"
+          >
+            <ArrowLeft size={13} aria-hidden /> {doc.provenance.cellLineId ? '세포주 프로토콜' : '프로토콜 목록'}
           </Link>
           <h1>{doc.title}</h1>
           <p className="workbench-head-note">
@@ -204,7 +207,7 @@ export function ProtocolDetail({ id }: { id: string }) {
               <>
                 <p className="text-warning">공유 원본의 절차를 편집합니다. 이 문서를 연결한 모든 세포주·실험에 영향을 줍니다.</p>
                 <p className="mt-1">배지·온도 등 세포주별 조건은 해당 세포주의 배양 조건에서 수정하세요.
-                  한 세포주의 절차만 바꾸려면 배양 SOP에서 전용 사본을 만드세요. 연결된 조건 항목은 세포주 맥락이 있어야 값을 확인할 수 있습니다.</p>
+                  한 세포주의 절차만 바꾸려면 그 세포주의 프로토콜 탭에서 사본을 만드세요. 연결된 조건 항목은 세포주 맥락이 있어야 값을 확인할 수 있습니다.</p>
               </>
             )}
           </div>

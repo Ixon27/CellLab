@@ -64,7 +64,7 @@ function Sources({ badges }: { badges: SourceBadge[] }) {
           >
             {sourceBadgeText(b)}
           </span>
-          {b.labels.length > 0 && <span className="min-w-0 truncate text-[11px] text-fg-dim" title={b.labels.join('\n')}>{b.labels.join(' · ')}</span>}
+          {b.labels.length > 0 && <span className="min-w-0 break-words text-[11px] text-fg-dim">{b.labels.join(' · ')}</span>}
         </span>
       ))}
     </span>
@@ -175,16 +175,108 @@ export function CurrentCultureSummary({ detail }: { detail: CellLineDetailDto })
           </label>
         )}
       </header>
-      {r.choice === 'none_active' && (
-        <p className="text-sm text-fg-muted">활성 배양이 없습니다. 아래는 조건 세트에 등록된 내용이며 배양별 기록 값은 표시하지 않습니다.</p>
-      )}
+      {r.choice === 'none_active' && <p className="text-xs text-fg-muted">활성 배양 없음 · 조건 세트에 등록된 값만 표시합니다.</p>}
       {r.choice === 'needs_choice' && (
-        <p className="text-sm text-fg-muted">
-          활성 배양이 {r.choices.length}개입니다. 배양을 선택하면 해당 배양의 기록만 표시합니다. 여러 배양을 합산하거나 임의로 고르지 않습니다.
-        </p>
+        <p className="text-xs text-fg-muted">활성 배양 {r.choices.length}개 · 배양을 고르면 그 배양의 기록만 표시합니다.</p>
       )}
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        <Item title="완전 배지 · 제품">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {culture && (
+          <>
+            <Item title="배양 용기">
+              {vessel?.recorded ? (
+                <div className="space-y-0.5 text-sm">
+                  <p className="font-medium">{vessel.label}</p>
+                  <p>
+                    사용 well <strong className="tabular-nums">{vessel.usedWells}</strong>
+                    {vessel.wellsPerUnit && vessel.wellsPerUnit > 1 ? ` / ${vessel.wellsPerUnit}` : ''} · 기록 기준 배지량{' '}
+                    {vessel.mediumMl !== null ? <strong className="tabular-nums">{ml(vessel.mediumMl)}</strong> : <span className="text-warning">부피 미기록</span>}
+                  </p>
+                  {vessel.areaCm2 !== null && <p className="text-xs text-fg-muted">사용 면적 {vessel.areaCm2} cm²</p>}
+                  {vessel.specMediumMlPerWell && (
+                    <p className="text-xs text-fg-muted">
+                      제품 사양의 well당 배지량 {vessel.specMediumMlPerWell.min ?? '?'}–{vessel.specMediumMlPerWell.max ?? '?'} mL
+                    </p>
+                  )}
+                  <p className="text-xs text-fg-dim">
+                    {[vessel.productNumbers, vessel.specStatus && SPEC_STATUS_LABELS[vessel.specStatus], vessel.surfaceTreatment && SURFACE_LABELS[vessel.surfaceTreatment]]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-0.5 text-sm">
+                  <p className="font-medium">{vessel?.label ?? culture.vessel}</p>
+                  <p className="text-xs text-fg-muted">사용 well 수·배지 부피 미기록</p>
+                </div>
+              )}
+            </Item>
+            <Item title="마지막 배지 교체">
+              <div className="space-y-0.5 text-sm">
+                {r.replacement ? (
+                  <>
+                    <p>
+                      <strong className="font-semibold tabular-nums">{dateTime(r.replacement.at)}</strong>
+                      {r.replacement.elapsed && <span className="text-fg-muted"> · {r.replacement.elapsed}</span>}
+                    </p>
+                    <p className="text-xs text-fg-muted">
+                      {[
+                        r.replacement.modeLabel,
+                        r.replacement.removedMl !== null && `제거 ${ml(r.replacement.removedMl)}`,
+                        r.replacement.addedMl !== null && `추가 ${ml(r.replacement.addedMl)}`,
+                        r.replacement.mediumLabel && `배지 ${r.replacement.mediumLabel}`,
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </p>
+                  </>
+                ) : (
+                  pending(<span className="text-fg-muted">교체 기록 없음 · 배양 시작 {dateOnly(culture.startedAt)}</span>)
+                )}
+                {r.lastAddition && (
+                  <p className="text-xs text-fg-dim">
+                    이후 첨가만: {dateTime(r.lastAddition.at)}
+                    {r.lastAddition.elapsed && ` · ${r.lastAddition.elapsed}`} (교체 기준일에 반영 안 함)
+                  </p>
+                )}
+              </div>
+            </Item>
+            <Item title="다음 확인 기준일 (참고)">
+              {r.nextCheck ? (
+                <div className="space-y-0.5 text-sm">
+                  <p>
+                    <strong className="font-semibold tabular-nums">{dateOnly(r.nextCheck.dueAt)}</strong>
+                    <span className="text-fg-muted">
+                      {' '}
+                      · {r.nextCheck.remainingDays > 0 ? `${r.nextCheck.remainingDays}일 남음` : r.nextCheck.remainingDays === 0 ? '기준일 도달' : `기준일 ${-r.nextCheck.remainingDays}일 지남`}
+                    </span>
+                  </p>
+                  <p className="text-xs text-fg-muted">
+                    마지막 교체 {dateOnly(r.nextCheck.basisAt)} + 교체 기한 {r.nextCheck.days}일
+                  </p>
+                </div>
+              ) : (
+                <p className="text-sm text-fg-muted">
+                  {r.mediumChangeText ? `교체 주기: ${r.mediumChangeText} · ` : ''}
+                  {typeof profile?.fields.medium_change_days === 'number' ? pending('교체 기록이 없어 계산하지 않음') : '교체 기한(일) 미설정'}
+                </p>
+              )}
+            </Item>
+            <Item title="마지막 confluency">
+              {r.confluency ? (
+                <div className="space-y-0.5 text-sm">
+                  <p>
+                    <strong className="font-semibold tabular-nums">{r.confluency.pct}%</strong>
+                    <span className="text-fg-muted"> · {dateTime(r.confluency.at)}</span>
+                  </p>
+                  <p className="text-xs text-fg-muted">{r.confluency.elapsed ? `${r.confluency.elapsed} 관찰 당시 값` : '관찰 당시 값'}</p>
+                </div>
+              ) : (
+                <p className="text-sm">{pending(<span className="text-fg-muted">측정 기록 없음</span>)}</p>
+              )}
+            </Item>
+          </>
+        )}
+        <Item title="완전 배지 · 제품" wide>
           {!r.medium.parts.length && (r.medium.text ? <p className="text-sm font-medium">{r.medium.text}</p> : <p className="text-sm text-warning">배지 조성 미등록</p>)}
           {r.medium.parts.length > 0 && (
             <ul className="space-y-1 text-sm">
@@ -212,114 +304,7 @@ export function CurrentCultureSummary({ detail }: { detail: CellLineDetailDto })
           <Env row={r.temperature} />
           <Env row={r.co2} />
         </Item>
-        <Item title="배양 용기">
-          {!vessel ? (
-            <p className="text-sm text-fg-muted">배양을 선택하면 표시됩니다.</p>
-          ) : vessel.recorded ? (
-            <div className="space-y-0.5 text-sm">
-              <p className="font-medium">{vessel.label}</p>
-              <p>
-                사용 well <strong className="tabular-nums">{vessel.usedWells}</strong>
-                {vessel.wellsPerUnit && vessel.wellsPerUnit > 1 ? ` / ${vessel.wellsPerUnit}` : ''} · 기록 기준 배지량{' '}
-                {vessel.mediumMl !== null ? <strong className="tabular-nums">{ml(vessel.mediumMl)}</strong> : <span className="text-warning">부피 미기록</span>}
-              </p>
-              {vessel.areaCm2 !== null && <p className="text-xs text-fg-muted">사용 면적 {vessel.areaCm2} cm²</p>}
-              {vessel.specMediumMlPerWell && (
-                <p className="text-xs text-fg-muted">
-                  제품 사양의 well당 배지량 {vessel.specMediumMlPerWell.min ?? '?'}–{vessel.specMediumMlPerWell.max ?? '?'} mL
-                </p>
-              )}
-              <p className="text-xs text-fg-dim">
-                {[vessel.productNumbers, vessel.specStatus && SPEC_STATUS_LABELS[vessel.specStatus], vessel.surfaceTreatment && SURFACE_LABELS[vessel.surfaceTreatment]]
-                  .filter(Boolean)
-                  .join(' · ')}
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-0.5 text-sm">
-              <p className="font-medium">{vessel.label}</p>
-              <p className="text-xs text-warning">사용 well 수와 배지 부피가 기록되지 않았습니다 (이전 기록은 단위·값을 추정하지 않습니다).</p>
-            </div>
-          )}
-        </Item>
-        <Item title="마지막 배지 교체 (실제 교체만)">
-          {!culture ? (
-            <p className="text-sm text-fg-muted">배양을 선택하면 표시됩니다.</p>
-          ) : (
-            <div className="space-y-0.5 text-sm">
-              {r.replacement
-                ? (
-                    <>
-                      <p>
-                        <strong className="font-semibold tabular-nums">{dateTime(r.replacement.at)}</strong>
-                        {r.replacement.elapsed && <span className="text-fg-muted"> · {r.replacement.elapsed}</span>}
-                      </p>
-                      <p className="text-xs text-fg-muted">
-                        {[
-                          r.replacement.modeLabel,
-                          r.replacement.removedMl !== null && `제거 ${ml(r.replacement.removedMl)}`,
-                          r.replacement.addedMl !== null && `추가 ${ml(r.replacement.addedMl)}`,
-                          r.replacement.mediumLabel && `배지 ${r.replacement.mediumLabel}`,
-                        ]
-                          .filter(Boolean)
-                          .join(' · ')}
-                      </p>
-                    </>
-                  )
-                : pending(<span className="text-fg-muted">교체 기록 없음 · 배양 시작 {dateOnly(culture.startedAt)}</span>)}
-              {r.lastAddition && (
-                <p className="text-xs text-fg-dim">
-                  이후 첨가만 기록: {dateTime(r.lastAddition.at)}
-                  {r.lastAddition.elapsed && ` · ${r.lastAddition.elapsed}`} (교체 기준일에 반영하지 않음)
-                </p>
-              )}
-            </div>
-          )}
-        </Item>
-        <Item title="다음 확인 기준일 (참고용)">
-          {!culture ? (
-            <p className="text-sm text-fg-muted">배양을 선택하면 표시됩니다.</p>
-          ) : r.nextCheck ? (
-            <div className="space-y-0.5 text-sm">
-              <p>
-                <strong className="font-semibold tabular-nums">{dateOnly(r.nextCheck.dueAt)}</strong>
-                <span className="text-fg-muted">
-                  {' '}
-                  · {r.nextCheck.remainingDays > 0 ? `${r.nextCheck.remainingDays}일 남음` : r.nextCheck.remainingDays === 0 ? '기준일 도달' : `기준일 ${-r.nextCheck.remainingDays}일 지남`}
-                </span>
-              </p>
-              <p className="text-xs text-fg-muted">
-                마지막 교체 {dateOnly(r.nextCheck.basisAt)} + 조건 세트의 배지 교체 기한 {r.nextCheck.days}일
-              </p>
-              <p className="text-xs text-fg-dim">확인 시점 표시일 뿐이며 교체·계대를 지시하지 않고 계대 일정이 아닙니다.</p>
-            </div>
-          ) : (
-            <p className="text-sm text-fg-muted">
-              {r.mediumChangeText ? `조건 세트의 교체 주기 입력값: ${r.mediumChangeText} · ` : ''}
-              {typeof profile?.fields.medium_change_days === 'number'
-                ? pending('마지막 교체 기록이 없어 기준일을 계산하지 않습니다.')
-                : '배지 교체 기한(일)이 설정되지 않아 기준일을 계산하지 않습니다.'}
-            </p>
-          )}
-        </Item>
-        <Item title="마지막 confluency 측정">
-          {!culture ? (
-            <p className="text-sm text-fg-muted">배양을 선택하면 표시됩니다.</p>
-          ) : r.confluency ? (
-            <div className="space-y-0.5 text-sm">
-              <p>
-                <strong className="font-semibold tabular-nums">{r.confluency.pct}%</strong>
-                <span className="text-fg-muted"> · {dateTime(r.confluency.at)}</span>
-              </p>
-              <p className="text-xs text-fg-muted">
-                {r.confluency.elapsed ? `${r.confluency.elapsed} 관찰 · ` : ''}관찰 당시 값이며 현재 상태가 아닙니다.
-              </p>
-            </div>
-          ) : (
-            <p className="text-sm">{pending(<span className="text-fg-muted">confluency 측정 기록 없음</span>)}</p>
-          )}
-        </Item>
-        <Item title="계대 기준 (조건 세트 · 실행 계획)">
+        <Item title="계대 기준">
           {r.passageCriteria.length ? (
             <ul className="space-y-1.5 text-sm">
               {r.passageCriteria.map((c) => (
@@ -334,11 +319,11 @@ export function CurrentCultureSummary({ detail }: { detail: CellLineDetailDto })
               ))}
             </ul>
           ) : (
-            <p className="text-sm text-warning">등록된 계대 기준이 없습니다. 값을 임의로 채우지 않았습니다.</p>
+            <p className="text-sm text-fg-muted">미등록 · 배양 조건에서 입력</p>
           )}
         </Item>
-        <Item title="미확정 · 조건부 조건">
-          {r.unresolved.length ? (
+        {r.unresolved.length > 0 && (
+          <Item title="미확정 · 조건부 조건">
             <ul className="space-y-1 text-sm">
               {r.unresolved.map((u) => (
                 <li key={u.id} className="min-w-0">
@@ -350,15 +335,10 @@ export function CurrentCultureSummary({ detail }: { detail: CellLineDetailDto })
                 </li>
               ))}
             </ul>
-          ) : (
-            <p className="text-sm text-fg-muted">{profile?.executionPlan ? '미확인·조건부로 표시된 조건 없음' : '실행 계획이 등록되지 않아 확인할 조건 정보가 없습니다.'}</p>
-          )}
-        </Item>
+          </Item>
+        )}
       </div>
-      <p className="text-[11px] leading-relaxed text-fg-dim">
-        값은 입력된 조건과 기록을 그대로 보여줍니다. “입력상 확인” 등 상태는 사용자가 입력한 판단이며 독립적으로 검증되지 않았습니다. 출처가 없는 값은 “출처 미등록”으로
-        표시합니다.
-      </p>
+      <p className="text-[11px] text-fg-dim">입력한 조건과 기록을 그대로 보여 줍니다. 상태 표시는 사용자 판단이며 앱이 검증하지 않습니다.</p>
     </section>
   );
 }

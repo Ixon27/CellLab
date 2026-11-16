@@ -19,6 +19,8 @@ import { MediumProductPicker } from '../../components/MediumProductPicker';
 import { VesselChangeCalculator } from '../../components/VesselChangeCalculator';
 import { executionProfile } from '../culture-plan-state';
 import { composeOperationNote, FieldRow, FormError, isoFromInput, localInput, PlanRecordSection } from './common';
+import type { ProtocolRunInput } from '../../../shared/protocol-run';
+import { ProtocolRunSection } from '../ProtocolRun';
 
 export interface OperationProps {
   line: CellLineDto;
@@ -40,6 +42,7 @@ export function FeedForm({ line, culture, profiles, initialAt, initialLog, onSav
   const [productLabel, setProductLabel] = useState('');
   const [note, setNote] = useState(initialLog?.note ?? '');
   const [records, setRecords] = useState<Record<string, string>>({});
+  const [protocolRun, setProtocolRun] = useState<ProtocolRunInput | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const profile = executionProfile(profiles, culture).profile;
@@ -58,6 +61,7 @@ export function FeedForm({ line, culture, profiles, initialAt, initialLog, onSav
           at: isoFromInput(at),
           feed,
           note: initialLog ? note : composeOperationNote(note, profile, 'feed', records),
+          ...(initialLog ? {} : { protocolRun }),
         },
       });
       onSaved();
@@ -78,7 +82,10 @@ export function FeedForm({ line, culture, profiles, initialAt, initialLog, onSav
         세포는 같은 용기에 그대로 두고 배지만 바꿉니다. 계대수(P{culture.passage})는 올라가지 않습니다.
       </p>
       {!initialLog && (
-        <PlanRecordSection profiles={profiles} culture={culture} stage="feed" lineId={line.id} records={records} onRecords={setRecords} />
+        <>
+          <PlanRecordSection profiles={profiles} culture={culture} stage="feed" lineId={line.id} records={records} onRecords={setRecords} />
+          <ProtocolRunSection line={line} profile={profile} folder="feed" value={protocolRun} onChange={setProtocolRun} />
+        </>
       )}
       {old?.mode === 'unspecified' && (
         <p className="mb-3 text-xs text-warning">이전 기록에는 교체 방식·부피가 없습니다. 실제 수행 내용을 아는 경우에만 보완하세요.</p>
@@ -165,6 +172,7 @@ export function PassageForm({ line, culture, profiles, initialAt, onSaved }: Ope
   const [children, setChildren] = useState<Child[]>([newChild()]);
   const [note, setNote] = useState('');
   const [records, setRecords] = useState<Record<string, string>>({});
+  const [protocolRun, setProtocolRun] = useState<ProtocolRunInput | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const profile = executionProfile(profiles, culture).profile;
@@ -196,6 +204,7 @@ export function PassageForm({ line, culture, profiles, initialAt, onSaved }: Ope
             seededVolumeMl: Number(concentration) > 0 ? Number(c.cells) / Number(concentration) : null,
           })),
           note: composeOperationNote(note, profile, 'passage', records),
+          protocolRun,
           keepParent: false,
         },
       });
@@ -219,6 +228,7 @@ export function PassageForm({ line, culture, profiles, initialAt, onSaved }: Ope
         교체를 사용하세요.
       </p>
       <PlanRecordSection profiles={profiles} culture={culture} stage="passage" lineId={line.id} records={records} onRecords={setRecords} />
+      <ProtocolRunSection line={line} profile={profile} folder="passage" value={protocolRun} onChange={setProtocolRun} />
       <Field label="계대 일시">
         <input required type="datetime-local" className={inputCls} value={at} onChange={(e) => setAt(e.target.value)} />
       </Field>
@@ -340,6 +350,7 @@ export function FreezeForm({ line, culture, profiles, initialAt, onSaved }: Oper
   const [testNote, setTestNote] = useState('');
   const [note, setNote] = useState('');
   const [records, setRecords] = useState<Record<string, string>>({});
+  const [protocolRun, setProtocolRun] = useState<ProtocolRunInput | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const profile = executionProfile(profiles, culture).profile;
@@ -383,6 +394,7 @@ export function FreezeForm({ line, culture, profiles, initialAt, onSaved }: Oper
           },
           note: composeOperationNote(note, profile, 'freeze', records),
           notes: composeOperationNote(note, profile, 'freeze', records),
+          protocolRun,
         },
       });
       onSaved();
@@ -400,6 +412,7 @@ export function FreezeForm({ line, culture, profiles, initialAt, onSaved }: Oper
       }}
     >
       <PlanRecordSection profiles={profiles} culture={culture} stage="freeze" lineId={line.id} records={records} onRecords={setRecords} />
+      <ProtocolRunSection line={line} profile={profile} folder="freeze" value={protocolRun} onChange={setProtocolRun} />
       <p className="mb-3 text-sm text-fg-muted">
         회수한 생세포에서 계속 배양할 세포를 먼저 뺍니다. 목표량을 채울 수 있는 바이알만 계산하며 실제 동결할 때 저장하세요.
       </p>

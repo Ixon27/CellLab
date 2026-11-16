@@ -2,6 +2,7 @@ import type { CultureFieldKey, CultureProfileFields } from './culture';
 import type { CultureExecutionPlan } from './culture-plan';
 import type { FieldUsage, MediumPurpose } from './literature';
 import type { CultureVesselUseDto, FeedRecord, FreezePlanRecord, LotRecovery, PassageRecord, PhotoDto, RepresentativeThaw } from './culture-operations';
+import type { ProtocolRun } from './protocol-run';
 
 export type GrowthMode = 'adherent' | 'suspension' | 'mixed';
 
@@ -166,6 +167,8 @@ export interface LogDto {
   photos: PhotoDto[];
   /** Typed view of a passage log; null for other types. */
   passage: PassageRecord | null;
+  /** Protocol followed in this record, with this run's step changes; null when none was attached. */
+  protocolRun: ProtocolRun | null;
   createdAt: string;
 }
 

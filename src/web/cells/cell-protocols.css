@@ -1,0 +1,189 @@
+/* Cell-line protocol folders and the per-run protocol steps of operation records. */
+.cell-protocols {
+  display: grid;
+  grid-template-columns: 248px minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+.cell-protocols-nav,
+.cell-protocols-main {
+  background: var(--pr-surface);
+  border-radius: 10px;
+  box-shadow:
+    inset 0 0 0 1px var(--pr-line),
+    0 1px 2px #1828600f,
+    0 8px 20px -12px #18286030;
+}
+.cell-protocols-nav {
+  position: sticky;
+  top: 12px;
+  padding: 8px;
+  font-size: 12.5px;
+}
+.cell-protocols-main {
+  min-width: 0;
+  padding: 18px 20px 22px;
+}
+.cell-protocols-folder + .cell-protocols-folder {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--pr-line);
+}
+.cell-protocols-folder-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 4px 0 8px;
+  color: var(--pr-fg-muted);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.cell-protocols-folder-head span {
+  flex: 1;
+}
+.cell-protocols-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 30px;
+  padding: 4px 8px 4px 22px;
+  border-radius: 7px;
+  text-align: left;
+  color: var(--pr-fg);
+}
+.cell-protocols-item:hover {
+  background: var(--pr-hover);
+}
+.cell-protocols-item[aria-current='true'] {
+  background: var(--pr-accent-soft);
+  color: var(--pr-accent);
+  font-weight: 600;
+}
+.cell-protocols-item.is-plan {
+  padding-left: 8px;
+}
+.cell-protocols-item small {
+  flex: none;
+  margin-left: auto;
+  color: var(--pr-fg-dim);
+  font-size: 10.5px;
+  font-weight: 400;
+  white-space: nowrap;
+}
+.cell-protocols-empty {
+  padding: 2px 8px 4px 22px;
+  color: var(--pr-fg-dim);
+  font-size: 11.5px;
+}
+.cell-protocols-title {
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.cell-protocols-meta {
+  margin-top: 3px;
+  color: var(--pr-fg-muted);
+  font-size: 12px;
+}
+
+.protocol-run {
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--pr-raised);
+  box-shadow: inset 0 0 0 1px var(--pr-line);
+}
+.protocol-run-saved {
+  padding: 8px 12px;
+  font-size: 12.5px;
+}
+.protocol-run-saved > summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-weight: 500;
+}
+.protocol-run-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 999px;
+  background: var(--pr-warning-soft);
+  color: var(--pr-warning);
+  font-size: 11px;
+  font-weight: 600;
+}
+.protocol-run-step {
+  display: flex;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+}
+.protocol-run-step[data-changed] {
+  background: var(--pr-warning-soft);
+}
+.protocol-run-number {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--pr-sunken);
+  color: var(--pr-fg-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.protocol-run-text {
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+.protocol-run-text p {
+  margin: 0;
+}
+.protocol-run-struck,
+.protocol-run-struck * {
+  color: var(--pr-fg-dim);
+  text-decoration: line-through;
+}
+.protocol-run-change {
+  margin-top: 3px;
+  white-space: pre-wrap;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--pr-fg);
+}
+.protocol-run-change::before {
+  content: '→ ';
+  color: var(--pr-warning);
+}
+.protocol-run-actions {
+  flex: none;
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 120ms ease-out;
+}
+.protocol-run-step:hover .protocol-run-actions,
+.protocol-run-step:focus-within .protocol-run-actions,
+.protocol-run-step[data-changed] .protocol-run-actions {
+  opacity: 1;
+}
+@media (hover: none) {
+  .protocol-run-actions {
+    opacity: 1;
+  }
+}
+@media (max-width: 900px) {
+  .cell-protocols {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .cell-protocols-nav {
+    position: static;
+  }
+}

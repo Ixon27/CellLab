@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CellLineDetailDto, CellLineDto, CellLineLogDto, LogDto, LotDto } from '../../shared/cell-line';
 import type { LineageGraph, LineageNode } from '../../shared/lineage';
 import { FEED_MODE_LABELS, RECOVERY_LABELS } from '../../shared/culture-operations';
+import { changedSteps } from '../../shared/protocol-run';
 import { api } from '../api';
 import { inputCls, smallBtnCls } from '../components/Dialog';
 import { useToast } from '../components/Toast';
@@ -179,14 +180,6 @@ function LineageInner({ line, focusNodeId, onSelectNode, onChanged, externalRevi
   }
   return (
     <div className="cell-workspace">
-      <div className="cell-workspace-toolbar">
-        <button className={smallBtnCls} onClick={() => setDialog('lot')}>
-          stock 입고(바이알)
-        </button>
-        <button className={smallBtnCls} onClick={() => setDialog('culture')}>
-          배양 상태로 입고
-        </button>
-      </div>
       {error && (
         <div role="alert" className="text-danger text-sm">
           {error}{' '}
@@ -206,6 +199,12 @@ function LineageInner({ line, focusNodeId, onSelectNode, onChanged, externalRevi
               </label>
               <button className={smallBtnCls} onClick={() => void fitView({ padding: 0.18, maxZoom: 1 })}>
                 전체 보기
+              </button>
+              <button className={smallBtnCls} onClick={() => setDialog('lot')}>
+                + stock 입고
+              </button>
+              <button className={smallBtnCls} onClick={() => setDialog('culture')}>
+                + 배양 상태로 입고
               </button>
             </div>
             <div ref={container} className="cell-graph">
@@ -278,6 +277,8 @@ function LineageInner({ line, focusNodeId, onSelectNode, onChanged, externalRevi
                         {l.feed && `${l.feed.mediumLabel ?? '배지 미기록'} · 제거 ${l.feed.removedMl ?? '?'} / 추가 ${l.feed.addedMl ?? '?'} mL · `}
                         {l.morphology && `형태: ${l.morphology} · `}
                         {!!l.photos?.length && `사진 ${l.photos.length}장 · `}
+                        {l.protocolRun &&
+                          `${l.protocolRun.title}${changedSteps(l.protocolRun).length ? ` (이번만 변경 ${changedSteps(l.protocolRun).length}단계)` : ''} · `}
                         {l.note || '—'}
                       </td>
                       <td>

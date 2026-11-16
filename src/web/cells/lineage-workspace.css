@@ -153,9 +153,14 @@ html[data-desktop='darwin'] .cell-titlebar-tools {
 }
 .cell-detail-header {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
-  gap: 20px;
+  gap: 14px 20px;
+}
+.cell-detail-header > div:first-child {
+  min-width: 200px;
+  flex: 1;
 }
 .cell-detail-header h1 {
   font-size: 20px;
@@ -169,6 +174,8 @@ html[data-desktop='darwin'] .cell-titlebar-tools {
 }
 .cell-overview-stats {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 22px;
   margin-left: auto;
 }
@@ -185,6 +192,7 @@ html[data-desktop='darwin'] .cell-titlebar-tools {
 .cell-overview-stats span {
   font-size: 11px;
   color: var(--pr-fg-muted);
+  white-space: nowrap;
 }
 .cell-detail-tabs {
   display: flex;
@@ -210,10 +218,10 @@ html[data-desktop='darwin'] .cell-titlebar-tools {
   min-width: 0;
   font-size: 13px;
 }
-.cell-workspace-toolbar {
+.cell-overview-stats .cell-detail-actions {
   display: flex;
+  align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
 }
 .cell-workspace-columns {
   display: grid;
@@ -230,8 +238,9 @@ html[data-desktop='darwin'] .cell-titlebar-tools {
 .cell-panel-heading {
   min-height: 44px;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
+  gap: 8px 12px;
   padding: 9px 14px;
   border-bottom: 1px solid var(--pr-line);
 }

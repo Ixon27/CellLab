@@ -34,7 +34,7 @@ export function ProtocolPreview({ protocol }: { protocol: ReadonlyProtocol }) {
       {preview.missingFields.length > 0 && (
         <p className="text-sm leading-relaxed text-fg-muted">
           템플릿 미리보기입니다. 변수는 읽기 쉬운 미설정 항목으로 표시하며, 원본 변수는 편집·저장 시 유지됩니다. 세포주별 값은 해당 세포주의
-          배양 SOP에서 확인하세요.
+          프로토콜 탭에서 확인하세요.
         </p>
       )}
       <Markdown text={preview.markdown} />

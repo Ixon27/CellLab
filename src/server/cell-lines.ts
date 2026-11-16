@@ -4,6 +4,7 @@ import type { FreezePlanRecord, PhotoDto, RecoveryStatus, RepresentativeThaw } f
 import type { VesselProduct } from '../shared/lab-products';
 import type { CultureProfileFields } from '../shared/culture';
 import { validateExecutionPlan } from '../shared/culture-plan';
+import type { ProtocolRun } from '../shared/protocol-run';
 import { db, parseJsonColumn } from './db';
 import { HttpError } from './http-error';
 
@@ -261,6 +262,15 @@ export function toPhotoDto(p: PhotoRow): PhotoDto {
   };
 }
 
+interface ProtocolRunRow {
+  log_id: string;
+  protocol_id: string | null;
+  title: string;
+  version: string;
+  protocol_updated_at: string;
+  steps: string;
+}
+
 export function toLogDtos(rows: LogRow[]): LogDto[] {
   const photos = new Map<string, PhotoDto[]>();
   for (const p of selectIn<PhotoRow>('culture_log_photos', 'log_id', rows.map((r) => r.id)).sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id))) {
@@ -268,6 +278,18 @@ export function toLogDtos(rows: LogRow[]): LogDto[] {
     list.push(toPhotoDto(p));
     photos.set(p.log_id, list);
   }
+  const runs = new Map(
+    selectIn<ProtocolRunRow>('culture_log_protocols', 'log_id', rows.map((r) => r.id)).map((p): [string, ProtocolRun] => [
+      p.log_id,
+      {
+        protocolId: p.protocol_id,
+        title: p.title,
+        version: p.version,
+        protocolUpdatedAt: p.protocol_updated_at,
+        steps: parseJsonColumn<ProtocolRun['steps']>(p.steps, []),
+      },
+    ]),
+  );
   return rows.map((r) => {
     const extra = parseJsonColumn<Record<string, string>>(r.extra, {});
     const seeded = numberOrNull(extra.seededCells);
@@ -297,6 +319,7 @@ export function toLogDtos(rows: LogRow[]): LogDto[] {
               childCount: numberOrNull(extra.childCount),
             }
           : null,
+      protocolRun: runs.get(r.id) ?? null,
       createdAt: r.created_at,
     };
   });

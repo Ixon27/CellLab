@@ -6,6 +6,8 @@ import type { FilledSop } from '../../shared/sop';
 import { protocolProvenance } from '../../shared/protocol';
 import type { ProtocolProvenance } from '../../shared/protocol';
 import type { CultureProfileFields } from '../../shared/culture';
+import { isProtocolFolder } from '../../shared/protocol-run';
+import type { CellProtocolDto, ProtocolFolder } from '../../shared/protocol-run';
 import { activeProfileRow, getLineRow, toProfileDto } from '../cell-lines';
 import type { CellLineRow } from '../cell-lines';
 import { db, now, parseJsonColumn, tx } from '../db';
@@ -62,7 +64,16 @@ interface CopyRow {
 
 function provenance(row: Pick<ProtocolRow, 'id' | 'source_file'>): ProtocolProvenance {
   const copy = db.prepare('SELECT * FROM protocol_copies WHERE protocol_id=?').get(row.id) as CopyRow | undefined;
-  if (!copy) return protocolProvenance(row);
+  if (!copy) {
+    const owner = db.prepare('SELECT cell_line_id FROM cell_protocols WHERE protocol_id=?').get(row.id) as { cell_line_id: string } | undefined;
+    if (!owner) return protocolProvenance(row);
+    return {
+      kind: 'manual',
+      label: '세포주 전용 문서',
+      detail: '이 세포주의 프로토콜 폴더에서 직접 작성한 문서입니다. 별도의 외부 검증 출처가 등록되어 있지 않습니다.',
+      cellLineId: owner.cell_line_id,
+    };
+  }
   const origin = parseJsonColumn<ProtocolProvenance>(copy.source_provenance, protocolProvenance(row));
   return {
     kind: 'cell_copy',
@@ -73,7 +84,8 @@ function provenance(row: Pick<ProtocolRow, 'id' | 'source_file'>): ProtocolProve
   };
 }
 
-function getProtocol(id: string): ProtocolRow & { provenance: ProtocolProvenance } {
+type StoredProtocol = ProtocolRow & { provenance: ProtocolProvenance };
+function getProtocol(id: string): StoredProtocol {
   const row = db.prepare('SELECT * FROM protocols WHERE id=?').get(id) as ProtocolRow | undefined;
   if (!row) throw new HttpError(404, '프로토콜을 찾을 수 없습니다');
   return { ...row, provenance: provenance(row) };
@@ -100,13 +112,20 @@ function insertProtocol(input: {
   return getProtocol(id);
 }
 
+/** Shared library. A cell line's folder protocols are listed only with `includeCell=1`, tagged with the line name. */
 protocols.get('/protocols', (c) => {
   const filter = c.req.query('category');
+  const includeCell = c.req.query('includeCell') === '1';
+  const where = [filter === undefined ? '' : 'p.category=?', includeCell ? '' : 'cp.protocol_id IS NULL'].filter(Boolean);
   const rows = db
     .prepare(
-      `SELECT id,title,category,version,status,builtin,source_file,updated_at FROM protocols ${filter === undefined ? '' : 'WHERE category=?'} ORDER BY updated_at DESC, title`,
+      `SELECT p.id,p.title,p.category,p.version,p.status,p.builtin,p.source_file,p.updated_at,cl.name AS cell_line_name
+       FROM protocols p LEFT JOIN cell_protocols cp ON cp.protocol_id=p.id LEFT JOIN cell_lines cl ON cl.id=cp.cell_line_id
+       ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY p.updated_at DESC, p.title`,
     )
-    .all(...(filter === undefined ? [] : [category(filter)])) as unknown as Omit<ProtocolRow, 'body_md' | 'created_at'>[];
+    .all(...(filter === undefined ? [] : [category(filter)])) as unknown as (Omit<ProtocolRow, 'body_md' | 'created_at'> & {
+    cell_line_name: string | null;
+  })[];
   return c.json(rows.map((row) => ({ ...row, provenance: provenance(row) })));
 });
 
@@ -220,6 +239,34 @@ function selectedSop(line: CellLineRow) {
   return protocol;
 }
 
+/** Copy a library document into a cell line's folder; the source stays unchanged and is recorded as the origin. */
+function copyIntoCell(line: CellLineRow, source: StoredProtocol, folder: ProtocolFolder, title: string) {
+  const copy = insertProtocol({
+    title,
+    category: 'culture_sop',
+    version: source.version,
+    status: 'draft',
+    bodyMd: source.body_md,
+    sourceFile: source.source_file ?? undefined,
+  });
+  db.prepare('INSERT INTO protocol_copies(protocol_id,source_protocol_id,source_title,source_version,source_provenance,cell_line_id) VALUES(?,?,?,?,?,?)')
+    .run(copy.id, source.id, source.title, source.version, JSON.stringify(source.provenance), line.id);
+  fileInFolder(line.id, copy.id, folder);
+  return copy;
+}
+
+function fileInFolder(lineId: string, protocolId: string, folder: ProtocolFolder) {
+  const { next } = db.prepare('SELECT COALESCE(MAX(sort),-1)+1 AS next FROM cell_protocols WHERE cell_line_id=? AND folder=?').get(lineId, folder) as { next: number };
+  db.prepare(
+    'INSERT INTO cell_protocols(protocol_id,cell_line_id,folder,sort) VALUES(?,?,?,?) ON CONFLICT(protocol_id) DO UPDATE SET folder=excluded.folder,sort=excluded.sort',
+  ).run(protocolId, lineId, folder, next);
+}
+
+function parseFolder(raw: unknown): ProtocolFolder {
+  if (!isProtocolFolder(raw)) throw new HttpError(400, '프로토콜 폴더를 확인하세요');
+  return raw;
+}
+
 protocols.post('/cell-lines/:id/sop/copy', async (c) => {
   const line = getLineRow(c.req.param('id'));
   const body = object(await c.req.json());
@@ -227,20 +274,71 @@ protocols.post('/cell-lines/:id/sop/copy', async (c) => {
   if (!source) throw new HttpError(400, '혼합 배양은 템플릿을 직접 선택한 뒤 사본을 만드세요');
   if (source.category !== 'culture_sop') throw new HttpError(400, '배양 SOP 분류의 템플릿을 선택하세요');
   const copy = tx(() => {
-    const copy = insertProtocol({
-      title: `${line.name} — ${source.title}`.slice(0, 200),
-      category: 'culture_sop',
-      version: source.version,
-      status: 'draft',
-      bodyMd: source.body_md,
-      sourceFile: source.source_file ?? undefined,
-    });
-    db.prepare('INSERT INTO protocol_copies(protocol_id,source_protocol_id,source_title,source_version,source_provenance,cell_line_id) VALUES(?,?,?,?,?,?)')
-      .run(copy.id, source.id, source.title, source.version, JSON.stringify(source.provenance), line.id);
+    const copy = copyIntoCell(line, source, 'general', `${line.name} — ${source.title}`.slice(0, 200));
     db.prepare('UPDATE cell_lines SET sop_protocol_id=?,updated_at=? WHERE id=?').run(copy.id, now(), line.id);
     return getProtocol(copy.id);
   });
   return c.json(copy, 201);
+});
+
+protocols.get('/cell-lines/:id/protocols', (c) => {
+  const line = getLineRow(c.req.param('id'));
+  const rows = db
+    .prepare(
+      `SELECT p.id,p.title,p.version,p.status,p.body_md,p.updated_at,cp.folder,cp.sort,pc.source_protocol_id,pc.source_title,pc.source_version
+       FROM cell_protocols cp JOIN protocols p ON p.id=cp.protocol_id LEFT JOIN protocol_copies pc ON pc.protocol_id=p.id
+       WHERE cp.cell_line_id=? ORDER BY cp.folder, cp.sort, p.title`,
+    )
+    .all(line.id) as unknown as (Pick<ProtocolRow, 'id' | 'title' | 'version' | 'status' | 'body_md' | 'updated_at'> & {
+    folder: ProtocolFolder;
+    sort: number;
+    source_protocol_id: string | null;
+    source_title: string | null;
+    source_version: string | null;
+  })[];
+  return c.json(
+    rows.map(
+      (r): CellProtocolDto => ({
+        id: r.id,
+        title: r.title,
+        version: r.version,
+        status: r.status,
+        folder: r.folder,
+        sort: r.sort,
+        bodyMd: r.body_md,
+        updatedAt: r.updated_at,
+        copiedFrom: r.source_protocol_id ? { id: r.source_protocol_id, title: r.source_title ?? '', version: r.source_version ?? '' } : null,
+      }),
+    ),
+  );
+});
+
+/** New folder document: blank, or a copy of any protocol (library or another line's). */
+protocols.post('/cell-lines/:id/protocols', async (c) => {
+  const line = getLineRow(c.req.param('id'));
+  const body = object(await c.req.json());
+  const target = parseFolder(body.folder);
+  const title = body.title === undefined ? '' : text(body.title, '제목', 200).trim();
+  const created = tx(() => {
+    if (body.sourceProtocolId !== undefined && body.sourceProtocolId !== null) {
+      const source = getProtocol(text(body.sourceProtocolId, '복사할 프로토콜', 120, true));
+      return copyIntoCell(line, source, target, title || source.title);
+    }
+    if (!title) throw new HttpError(400, '제목을 입력하세요');
+    const doc = insertProtocol({ title, category: 'culture_sop', version: '', status: 'draft', bodyMd: text(body.bodyMd ?? '', '본문', 10 * 1024 * 1024) });
+    fileInFolder(line.id, doc.id, target);
+    return doc;
+  });
+  return c.json(getProtocol(created.id), 201);
+});
+
+protocols.patch('/cell-lines/:id/protocols/:protocolId', async (c) => {
+  const line = getLineRow(c.req.param('id'));
+  const id = c.req.param('protocolId');
+  if (!db.prepare('SELECT 1 FROM cell_protocols WHERE protocol_id=? AND cell_line_id=?').get(id, line.id))
+    throw new HttpError(404, '이 세포주의 프로토콜이 아닙니다');
+  fileInFolder(line.id, id, parseFolder(object(await c.req.json()).folder));
+  return c.json(getProtocol(id));
 });
 
 protocols.get('/cell-lines/:id/sop', (c) => {
