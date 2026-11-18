@@ -1,5 +1,6 @@
 import type { CellLineDto, CultureDto, GrowthMode, LogDto, LotDto, ProfileDto, ProviderXref, SourceRef } from '../shared/cell-line';
-import { feedFromExtra, mediumVolumeAfter } from '../shared/culture-operations';
+import { countFromExtra, feedFromExtra, isLeftoverHandling, logOperation, mediumVolumeAfter, plateCountOf } from '../shared/culture-operations';
+import type { PlateStatus } from '../shared/culture-operations';
 import type { FreezePlanRecord, PhotoDto, RecoveryStatus, RepresentativeThaw } from '../shared/culture-operations';
 import type { VesselProduct } from '../shared/lab-products';
 import type { CultureProfileFields } from '../shared/culture';
@@ -221,9 +222,11 @@ export function toCultureDtos(rows: CultureRow[]): CultureDto[] {
     if (use && log.created_at >= use.updated_at)
       medium.set(log.culture_id, mediumVolumeAfter(medium.get(log.culture_id) ?? null, feedFromExtra(parseJsonColumn<Record<string, string>>(log.extra, {}))));
   }
+  const plateRows = selectIn<{ culture_id: string; plate_no: number; status: PlateStatus; at: string }>('culture_plates', 'culture_id', rows.map((r) => r.id));
   return rows.map((r) => {
     const u = uses.get(r.id);
     const product = u ? parseJsonColumn<VesselProduct | null>(u.snapshot, null) : null;
+    const use = u && product ? { vesselProductId: u.vessel_product_id, usedWells: u.used_wells, mediumMl: medium.get(r.id) ?? null, product } : null;
     return {
       id: r.id,
       cellLineId: r.cell_line_id,
@@ -238,10 +241,11 @@ export function toCultureDtos(rows: CultureRow[]): CultureDto[] {
       endedAt: r.ended_at,
       endNote: r.end_note,
       notes: r.notes,
-      vesselUse:
-        u && product
-          ? { vesselProductId: u.vessel_product_id, usedWells: u.used_wells, mediumMl: medium.get(r.id) ?? null, product }
-          : null,
+      vesselUse: use,
+      plates: Array.from({ length: plateCountOf(use) }, (_, i) => {
+        const row = plateRows.find((p) => p.culture_id === r.id && p.plate_no === i + 1);
+        return { no: i + 1, status: row?.status ?? 'active', at: row?.at ?? null };
+      }),
       createdAt: r.created_at,
     };
   });
@@ -317,8 +321,12 @@ export function toLogDtos(rows: LogRow[]): LogDto[] {
               seededCells: seeded,
               leftoverCells: r.total_cells !== null && seeded !== null ? Math.max(0, r.total_cells - seeded) : null,
               childCount: numberOrNull(extra.childCount),
+              leftoverHandling: isLeftoverHandling(extra.leftoverHandling) ? extra.leftoverHandling : null,
             }
           : null,
+      operation: logOperation(r.type, extra),
+      count: countFromExtra(extra),
+      thaw: r.type === 'note' && extra.thawLotId ? { lotId: extra.thawLotId, vials: numberOrNull(extra.thawVials) } : null,
       protocolRun: runs.get(r.id) ?? null,
       createdAt: r.created_at,
     };

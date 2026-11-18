@@ -10,6 +10,9 @@ import { db, now, parseJsonColumn } from '../db';
 import { HttpError } from '../http-error';
 import {
   addLog,
+  deleteCulture,
+  deleteLot,
+  discardPlates,
   endCulture,
   eventTime,
   freezeCulture,
@@ -19,6 +22,7 @@ import {
   passageCulture,
   receiveCulture,
   receiveLot,
+  lineageAnnotations,
   removeLog,
   summarizeLogs,
   thawLot,
@@ -42,6 +46,7 @@ lineage.post('/cultures/:id/freeze-plan', async (c) => {
   return c.json(freezePreview(await c.req.json<unknown>()));
 });
 lineage.post('/cultures/:id/end', async (c) => c.json(endCulture(c.req.param('id'), await c.req.json<LineageInput>())));
+lineage.post('/cultures/:id/discard-plates', async (c) => c.json(discardPlates(c.req.param('id'), await c.req.json<LineageInput>()), 201));
 lineage.post('/cultures/:id/logs', async (c) => c.json(addLog(c.req.param('id'), await c.req.json<LineageInput>()), 201));
 lineage.get('/cultures/:id/logs', (c) => {
   getCulture(c.req.param('id'));
@@ -92,6 +97,16 @@ lineage.get('/cell-lines/:id/logs', (c) => {
 lineage.put('/lots/:id', async (c) => c.json(updateLot(c.req.param('id'), await c.req.json<LineageInput>())));
 lineage.put('/cultures/:id', async (c) => c.json(updateCulture(c.req.param('id'), await c.req.json<LineageInput>())));
 lineage.put('/logs/:id', async (c) => c.json(updateLog(c.req.param('id'), await c.req.json<LineageInput>())));
+/** `restoreVials` (query) overrides how many vials a deleted thawed culture gives back to its lot. */
+lineage.delete('/cultures/:id', (c) => {
+  const raw = c.req.query('restoreVials');
+  removePhotoFiles(deleteCulture(c.req.param('id'), raw === undefined ? undefined : Number(raw)));
+  return c.json({ ok: true });
+});
+lineage.delete('/lots/:id', (c) => {
+  removePhotoFiles(deleteLot(c.req.param('id')));
+  return c.json({ ok: true });
+});
 lineage.delete('/logs/:id', (c) => {
   removePhotoFiles(removeLog(c.req.param('id')));
   return c.json({ ok: true });
@@ -140,7 +155,7 @@ lineage.get('/cell-lines/:id/lineage', (c) => {
     .all(id) as unknown as LogRow[];
   const last: Record<string, LogDto> = {};
   for (const dto of toLogDtos(measured)) last[dto.cultureId] = dto;
-  return c.json(buildLineageGraph(toLotDtos(lots), toCultureDtos(cultures), last));
+  return c.json(buildLineageGraph(toLotDtos(lots), toCultureDtos(cultures), last, lineageAnnotations(id)));
 });
 lineage.get('/dashboard', (c) => {
   const current = Date.parse(now());

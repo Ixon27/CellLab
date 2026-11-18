@@ -1,6 +1,6 @@
 import type { CultureDto, ProfileDto } from '../../shared/cell-line';
 import type { CultureExecutionPlan, PlanStage } from '../../shared/culture-plan';
-import { PLAN_STAGE_LABELS, PLAN_STATUS_LABELS } from '../../shared/culture-plan';
+import { CONDITION_SNAPSHOT_HEADING, PLAN_STAGE_LABELS, PLAN_STATUS_LABELS } from '../../shared/culture-plan';
 
 export function executionProfile(profiles: ProfileDto[], culture?: Pick<CultureDto, 'profileId'>) {
   const linked = culture?.profileId ? profiles.find((p) => p.id === culture.profileId) : undefined;
@@ -16,7 +16,7 @@ export function executionSnapshot(profile: ProfileDto | null, stage: PlanStage):
   const plan = profile.executionPlan;
   const lines = [
     '',
-    '[사용 조건 스냅샷 · 실행 완료/외부 검증을 의미하지 않음]',
+    CONDITION_SNAPSHOT_HEADING,
     `조건 세트: ${profile.name} (${profile.id})`,
     `조건 수정 시각: ${profile.updatedAt}`,
     `작업: ${PLAN_STAGE_LABELS[stage]}`,

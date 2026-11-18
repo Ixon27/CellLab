@@ -94,15 +94,15 @@ describe('재고와 배양 계보', () => {
       ).status,
     ).toBe(400);
   });
-  it('일반 기록의 수치를 검증하고 계대·동결 기록의 직접 수정과 삭제를 막는다', async () => {
+  it('일반 기록의 수치를 검증하고, 이어진 계보가 있는 계대 기록은 메모를 고칠 수 있지만 취소할 수 없다', async () => {
     expect(
       (await app.request(`/api/cultures/${culture.id}/logs`, json('POST', { at, type: 'observation', viabilityPct: 101 }))).status,
     ).toBe(400);
     expect((await app.request(`/api/cultures/${culture.id}/logs`, json('POST', { at, type: 'passage' }))).status).toBe(400);
     const logs = (await (await app.request(`/api/cultures/${culture.id}/logs`)).json()) as LogDto[];
     const passage = logs.find((l) => l.type === 'passage')!;
-    expect((await app.request(`/api/logs/${passage.id}`, { method: 'DELETE' })).status).toBe(400);
-    expect((await app.request(`/api/logs/${passage.id}`, json('PUT', { note: '변경' }))).status).toBe(400);
+    expect((await app.request(`/api/logs/${passage.id}`, { method: 'DELETE' })).status).toBe(409);
+    expect((await app.request(`/api/logs/${passage.id}`, json('PUT', { note: '변경' }))).status).toBe(200);
     const log = (await (
       await app.request(
         `/api/cultures/${culture.id}/logs`,

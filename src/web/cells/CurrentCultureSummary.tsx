@@ -187,8 +187,8 @@ export function CurrentCultureSummary({ detail }: { detail: CellLineDetailDto })
                 <div className="space-y-0.5 text-sm">
                   <p className="font-medium">{vessel.label}</p>
                   <p>
-                    사용 well <strong className="tabular-nums">{vessel.usedWells}</strong>
-                    {vessel.wellsPerUnit && vessel.wellsPerUnit > 1 ? ` / ${vessel.wellsPerUnit}` : ''} · 기록 기준 배지량{' '}
+                    {vessel.wellsPerUnit && vessel.wellsPerUnit > 1 ? '사용 well' : '용기'} <strong className="tabular-nums">{vessel.usedWells}</strong>
+                    {vessel.wellsPerUnit && vessel.wellsPerUnit > 1 ? ` (plate당 ${vessel.wellsPerUnit} well)` : '개'} · 기록 기준 배지량{' '}
                     {vessel.mediumMl !== null ? <strong className="tabular-nums">{ml(vessel.mediumMl)}</strong> : <span className="text-warning">부피 미기록</span>}
                   </p>
                   {vessel.areaCm2 !== null && <p className="text-xs text-fg-muted">사용 면적 {vessel.areaCm2} cm²</p>}

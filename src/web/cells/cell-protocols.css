@@ -161,6 +161,27 @@
   content: '→ ';
   color: var(--pr-warning);
 }
+.protocol-run-inline {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.protocol-run-inline li {
+  overflow-wrap: anywhere;
+}
+.protocol-run-inline li::before {
+  content: 'SOP ';
+  color: var(--pr-warning);
+  font-weight: 600;
+}
+.protocol-run-inline s {
+  color: var(--pr-fg-dim);
+}
+.protocol-run-inline strong {
+  font-weight: 600;
+}
 .protocol-run-actions {
   flex: none;
   display: flex;

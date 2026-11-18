@@ -94,31 +94,57 @@ export interface ProtocolRunInput {
   protocolUpdatedAt: string;
   deviations: { index: number; text: string }[];
 }
+/** Editing a saved record: new step changes over the run it already holds (the snapshot stays as performed). */
+export interface ProtocolRunRevision {
+  deviations: ProtocolRunInput['deviations'];
+}
+/** A record edit sends a fresh protocol, a revision of the saved run, or null to remove the protocol from the record. */
+export type ProtocolRunEdit = ProtocolRunInput | ProtocolRunRevision | null;
 
 const MAX_STEP_TEXT = 5000;
 const MAX_DEVIATIONS = 300;
 
-/** Shape-check the request part; throws a Korean Error for the caller to turn into a 400. */
-export function validateProtocolRunInput(raw: unknown): ProtocolRunInput | null {
-  if (raw === undefined || raw === null) return null;
-  const fail = (): never => {
-    throw new Error('프로토콜 수행 기록 형식이 올바르지 않습니다');
-  };
-  if (typeof raw !== 'object' || Array.isArray(raw)) return fail();
-  const r = raw as Record<string, unknown>;
-  if (typeof r.protocolId !== 'string' || !r.protocolId || r.protocolId.length > 120) return fail();
-  if (typeof r.protocolUpdatedAt !== 'string' || !r.protocolUpdatedAt) return fail();
-  if (!Array.isArray(r.deviations) || r.deviations.length > MAX_DEVIATIONS) return fail();
+function protocolRunFormatError(): never {
+  throw new Error('프로토콜 수행 기록 형식이 올바르지 않습니다');
+}
+function validDeviations(raw: unknown): ProtocolRunInput['deviations'] {
+  if (!Array.isArray(raw) || raw.length > MAX_DEVIATIONS) return protocolRunFormatError();
   const seen = new Set<number>();
-  const deviations = r.deviations.map((d) => {
-    if (!d || typeof d !== 'object') return fail();
+  return raw.map((d) => {
+    if (!d || typeof d !== 'object') return protocolRunFormatError();
     const { index, text } = d as Record<string, unknown>;
-    if (typeof index !== 'number' || !Number.isInteger(index) || index < 0 || seen.has(index)) return fail();
-    if (typeof text !== 'string' || text.length > MAX_STEP_TEXT) return fail();
+    if (typeof index !== 'number' || !Number.isInteger(index) || index < 0 || seen.has(index)) return protocolRunFormatError();
+    if (typeof text !== 'string' || text.length > MAX_STEP_TEXT) return protocolRunFormatError();
     seen.add(index);
     return { index, text: text.trim() };
   });
-  return { protocolId: r.protocolId, protocolUpdatedAt: r.protocolUpdatedAt, deviations };
+}
+
+/** Shape-check the request part; throws a Korean Error for the caller to turn into a 400. */
+export function validateProtocolRunInput(raw: unknown): ProtocolRunInput | null {
+  if (raw === undefined || raw === null) return null;
+  if (typeof raw !== 'object' || Array.isArray(raw)) return protocolRunFormatError();
+  const r = raw as Record<string, unknown>;
+  if (typeof r.protocolId !== 'string' || !r.protocolId || r.protocolId.length > 120) return protocolRunFormatError();
+  if (typeof r.protocolUpdatedAt !== 'string' || !r.protocolUpdatedAt) return protocolRunFormatError();
+  return { protocolId: r.protocolId, protocolUpdatedAt: r.protocolUpdatedAt, deviations: validDeviations(r.deviations) };
+}
+/** Shape-check an edit: without `protocolId` it revises the saved run, with one it attaches that protocol afresh. */
+export function validateProtocolRunEdit(raw: unknown): ProtocolRunEdit {
+  if (raw === null) return null;
+  if (raw && typeof raw === 'object' && !Array.isArray(raw) && !('protocolId' in raw))
+    return { deviations: validDeviations((raw as Record<string, unknown>).deviations) };
+  return validateProtocolRunInput(raw ?? protocolRunFormatError());
+}
+
+/** The saved run with a new set of changes; steps not listed go back to as written. */
+export function reviseProtocolRun(run: ProtocolRun, deviations: ProtocolRunInput['deviations']): ProtocolRun {
+  const steps = run.steps.map((s) => ({ index: s.index, section: s.section, text: s.original }));
+  return { ...buildProtocolRun({ id: run.protocolId ?? '', title: run.title, version: run.version, updatedAt: run.protocolUpdatedAt }, steps, deviations), protocolId: run.protocolId };
+}
+/** The changes of a saved run, in the shape an edit sends back. */
+export function runDeviations(run: ProtocolRun): ProtocolRunInput['deviations'] {
+  return changedSteps(run).map((s) => ({ index: s.index, text: s.modified! }));
 }
 
 /** Apply deviations to the steps of the protocol text shown to the user. */

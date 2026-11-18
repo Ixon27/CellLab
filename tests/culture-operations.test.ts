@@ -124,7 +124,9 @@ describe('실제 기록·재고 API', () => {
       })
     ).json()) as { id: string };
     const use = { vesselProductId: product.id, usedWells: 3, mediumMl: 6 };
-    expect((await put(`/cultures/${culture.id}`, { vesselUse: { ...use, usedWells: 13 } })).status).toBe(400);
+    expect((await put(`/cultures/${culture.id}`, { vesselUse: { ...use, usedWells: 0 } })).status).toBe(400);
+    const twoPlates = (await (await put(`/cultures/${culture.id}`, { vesselUse: { ...use, usedWells: 13 } })).json()) as CultureDto;
+    expect(twoPlates.vessel).toBe('12-well · 13 well (plate 2개)');
     expect((await put(`/cultures/${culture.id}`, { vesselUse: use })).status).toBe(200);
     expect((await put(`/lab-products/vessels/${product.id}`, { areaCm2PerWell: 4 })).status).toBe(200);
     const first = (await (await put(`/cultures/${culture.id}`, { vesselUse: use, notes: '보존' })).json()) as CultureDto;

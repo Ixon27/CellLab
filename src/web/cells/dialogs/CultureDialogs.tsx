@@ -8,10 +8,12 @@ import { VesselUsePicker } from '../../components/VesselUsePicker';
 import { useToast } from '../../components/Toast';
 import { executionProfile } from '../culture-plan-state';
 import { ObservationForm } from '../operations/ObservationForm';
-import { FeedForm, FreezeForm, PassageForm } from '../operations/OperationForms';
+import { FeedForm } from '../operations/OperationForms';
+import { FreezeForm, PassageForm } from '../operations/HarvestForms';
 import { composeOperationNote, isoFromInput, localInput, PlanRecordSection } from '../operations/common';
-import type { ProtocolRunInput } from '../../../shared/protocol-run';
-import { ProtocolRunSection } from '../ProtocolRun';
+import type { ProtocolRunEdit } from '../../../shared/protocol-run';
+import { RESERVED_EXTRA_KEYS } from '../../../shared/culture-operations';
+import { initialRunEdit, ProtocolRunSection } from '../ProtocolRun';
 
 interface Props {
   line: CellLineDto;
@@ -21,6 +23,8 @@ interface Props {
   initialLog?: LogDto;
   initialAt?: string;
   logType?: 'observation' | 'medium_change';
+  /** Cells per vial on the stock the culture descends from (prefills freezing). */
+  defaultCellsPerVial?: number | null;
   onClose(): void;
   onSaved(): void;
 }
@@ -59,7 +63,8 @@ function CultureDialog({ action, ...p }: Props & { action: BasicAction }) {
   const [type, setType] = useState(p.initialLog?.type ?? 'note');
   const [note, setNote] = useState(p.initialLog?.note ?? '');
   const [mycoplasma, setMycoplasma] = useState(p.initialLog?.mycoplasma ?? 'pending');
-  const [extra, setExtra] = useState<[string, string][]>(Object.entries(p.initialLog?.extra ?? {}));
+  // App-written keys (seeding, thaw links) are kept by the server and never shown as free items.
+  const [extra, setExtra] = useState<[string, string][]>(Object.entries(p.initialLog?.extra ?? {}).filter(([k]) => !RESERVED_EXTRA_KEYS.includes(k)));
   const [metrics, setMetrics] = useState({
     confluencyPct: String(p.initialLog?.confluencyPct ?? ''),
     cellsPerMl: String(p.initialLog?.cellsPerMl ?? ''),
@@ -67,14 +72,14 @@ function CultureDialog({ action, ...p }: Props & { action: BasicAction }) {
     totalCells: String(p.initialLog?.totalCells ?? ''),
   });
   const [records, setRecords] = useState<Record<string, string>>({});
-  const [protocolRun, setProtocolRun] = useState<ProtocolRunInput | null>(null);
+  const [protocolRun, setProtocolRun] = useState<ProtocolRunEdit>(() => initialRunEdit(p.initialLog?.protocolRun));
   const stage = action === 'lot' || action === 'culture' ? 'stock' : action === 'thaw' ? 'thaw' : 'feed';
   const usedProfile =
     action === 'culture' || action === 'thaw'
       ? (p.profiles.find((v) => v.id === profile) ?? null)
       : executionProfile(p.profiles, p.culture).profile;
   // Only thaw and other logs create a record a protocol can attach to; its variables fill like the server's (linked, else active set).
-  const runFolder = p.initialLog ? null : action === 'thaw' ? 'thaw' : action === 'log' ? 'treatment' : null;
+  const runFolder = action === 'thaw' ? 'thaw' : action === 'log' ? 'treatment' : null;
   const runProfile = usedProfile ?? p.profiles.find((v) => v.isActive) ?? null;
   const patchTarget = (i: number, change: Partial<ThawTarget>) => setThawTargets((old) => old.map((t, j) => (j === i ? { ...t, ...change } : t)));
   async function save() {
@@ -129,7 +134,7 @@ function CultureDialog({ action, ...p }: Props & { action: BasicAction }) {
           note: savedNote,
           mycoplasma: type === 'mycoplasma' ? mycoplasma : null,
           extra: Object.fromEntries(extra.map(([k, v]) => [k.trim(), v])),
-          ...(p.initialLog ? {} : { protocolRun }),
+          protocolRun,
         };
       }
       const response = await api<{ warnings?: string[] }>(path, { method: p.initialLog ? 'PUT' : 'POST', json: body });
@@ -169,7 +174,16 @@ function CultureDialog({ action, ...p }: Props & { action: BasicAction }) {
           onRecords={setRecords}
         />
       )}
-      {runFolder && <ProtocolRunSection line={p.line} profile={runProfile} folder={runFolder} value={protocolRun} onChange={setProtocolRun} />}
+      {runFolder && (
+        <ProtocolRunSection
+          line={p.line}
+          profile={runProfile}
+          folder={runFolder}
+          value={protocolRun}
+          onChange={setProtocolRun}
+          saved={p.initialLog ? p.initialLog.protocolRun : undefined}
+        />
+      )}
       <Field label="일시">
         <input className={inputCls} type="datetime-local" value={at} onChange={(e) => setAt(e.target.value)} />
       </Field>

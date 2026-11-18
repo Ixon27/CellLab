@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { formatCount, hemocytometer, seedingVolume, targetCellsFor } from '../src/shared/cell-count';
+import { formatCount, hemocytometer, parseScientific, seedingVolume, targetCellsFor } from '../src/shared/cell-count';
 
 describe('세포 수 계산', () => {
+  it('계수기 화면의 지수 표기를 앞자리와 10의 거듭제곱으로 읽는다', () => {
+    expect(['1.46x10e7', '1.46×10^7', '1.46e7', '14600000'].map(parseScientific)).toEqual(Array(4).fill({ mantissa: 1.46, exponent: 7 }));
+    expect(parseScientific('3.73x10e6')).toEqual({ mantissa: 3.73, exponent: 6 });
+    expect(parseScientific('abc')).toBeNull();
+  });
   it('혈구계산판 농도와 생존율을 계산한다', () => {
     const result = hemocytometer({ liveCounts: [50, 48, 52, 50], deadCounts: [5, 5, 5, 5], dilutionFactor: 2 });
     expect(result.cellsPerMl).toBe(1e6);

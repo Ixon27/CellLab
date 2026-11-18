@@ -1,4 +1,11 @@
-import { buildProtocolRun, protocolSteps, validateProtocolRunInput } from '../shared/protocol-run';
+import {
+  buildProtocolRun,
+  protocolSteps,
+  reviseProtocolRun,
+  validateProtocolRunEdit,
+  validateProtocolRunInput,
+} from '../shared/protocol-run';
+import type { ProtocolRun } from '../shared/protocol-run';
 import type { CultureProfileFields } from '../shared/culture';
 import { previewSop } from '../shared/sop';
 import type { ProfileRow } from './cell-lines';
@@ -45,4 +52,42 @@ export function attachProtocolRun(logIds: string[], cultureId: string, raw: unkn
   );
   const steps = JSON.stringify(run.steps);
   for (const logId of logIds) insert.run(logId, protocol.id, run.title, run.version, run.protocolUpdatedAt, steps, now());
+}
+
+/**
+ * Change the protocol a saved record followed, at any time: `{deviations}` revises its saved run (as performed, not the
+ * current protocol text), `{protocolId,…}` attaches that protocol afresh, `null` removes it. `undefined` leaves it alone.
+ * Must run inside the caller's transaction.
+ */
+export function editProtocolRun(logId: string, cultureId: string, raw: unknown): void {
+  if (raw === undefined) return;
+  let edit;
+  try {
+    edit = validateProtocolRunEdit(raw);
+  } catch (error) {
+    throw new HttpError(400, (error as Error).message);
+  }
+  if (edit && !('protocolId' in edit)) {
+    const row = db.prepare('SELECT * FROM culture_log_protocols WHERE log_id=?').get(logId) as
+      | { protocol_id: string | null; title: string; version: string; protocol_updated_at: string; steps: string }
+      | undefined;
+    if (!row) throw new HttpError(400, '이 기록에는 수정할 프로토콜이 없습니다. 프로토콜을 먼저 선택하세요');
+    const saved: ProtocolRun = {
+      protocolId: row.protocol_id,
+      title: row.title,
+      version: row.version,
+      protocolUpdatedAt: row.protocol_updated_at,
+      steps: parseJsonColumn<ProtocolRun['steps']>(row.steps, []),
+    };
+    let revised;
+    try {
+      revised = reviseProtocolRun(saved, edit.deviations);
+    } catch (error) {
+      throw new HttpError(400, (error as Error).message);
+    }
+    db.prepare('UPDATE culture_log_protocols SET steps=? WHERE log_id=?').run(JSON.stringify(revised.steps), logId);
+    return;
+  }
+  db.prepare('DELETE FROM culture_log_protocols WHERE log_id=?').run(logId);
+  if (edit) attachProtocolRun([logId], cultureId, edit);
 }

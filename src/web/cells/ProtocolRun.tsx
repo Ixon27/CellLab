@@ -6,9 +6,10 @@ import {
   PROTOCOL_FOLDER_LABELS,
   changedSteps,
   protocolSteps,
+  runDeviations,
   type ProtocolFolder,
   type ProtocolRun,
-  type ProtocolRunInput,
+  type ProtocolRunEdit,
 } from '../../shared/protocol-run';
 import { inputCls, smallBtnCls, smallGhostBtnCls, smallPrimaryBtnCls } from '../components/Dialog';
 import { Markdown } from '../components/Markdown';
@@ -70,9 +71,17 @@ function StepList({
   );
 }
 
+const SAVED = '__saved';
+/** What an edit form starts from: the record's saved run as it was performed, or no protocol. */
+export function initialRunEdit(saved: ProtocolRun | null | undefined): ProtocolRunEdit {
+  return saved ? { deviations: runDeviations(saved) } : null;
+}
+
 /**
  * Pick the protocol an operation follows and change single steps for this run only.
  * Changes are sent with the record; the protocol document is never modified here.
+ * With `saved` (editing a stored record) the steps start from that record's run as performed, its changes can be
+ * revised at any time, and no protocol is picked automatically.
  */
 export function ProtocolRunSection({
   line,
@@ -80,16 +89,19 @@ export function ProtocolRunSection({
   folder,
   value,
   onChange,
+  saved,
 }: {
   line: CellLineDto;
   /** Condition set whose values fill the protocol variables (the culture's linked set, else the active one). */
   profile: ProfileDto | null;
   folder: ProtocolFolder;
-  value: ProtocolRunInput | null;
-  onChange(next: ProtocolRunInput | null): void;
+  value: ProtocolRunEdit;
+  onChange(next: ProtocolRunEdit): void;
+  saved?: ProtocolRun | null;
 }) {
   const { items, error } = useCellProtocols(line.id);
-  const [chosen, setChosen] = useState(false);
+  const editingRecord = saved !== undefined;
+  const [chosen, setChosen] = useState(editingRecord);
   const [editing, setEditing] = useState<number | null>(null);
   const [draft, setDraft] = useState('');
   // Default to the first protocol of the operation's folder once the list arrives, unless the user already chose.
@@ -98,8 +110,17 @@ export function ProtocolRunSection({
     const first = items.find((p) => p.folder === folder);
     if (first) onChange({ protocolId: first.id, protocolUpdatedAt: first.updatedAt, deviations: [] });
   }, [items, folder, chosen, value, onChange]);
-  const protocol = items?.find((p) => p.id === value?.protocolId) ?? null;
-  const steps = useMemo(() => (protocol ? protocolSteps(fillProtocol(protocol.bodyMd, line, profile).markdown) : []), [protocol, line, profile]);
+  const revising = !!value && !('protocolId' in value);
+  const protocol = value && 'protocolId' in value ? (items?.find((p) => p.id === value.protocolId) ?? null) : null;
+  const steps = useMemo(
+    () =>
+      protocol
+        ? protocolSteps(fillProtocol(protocol.bodyMd, line, profile).markdown)
+        : revising && saved
+          ? saved.steps.map((s) => ({ index: s.index, section: s.section, text: s.original }))
+          : [],
+    [protocol, revising, saved, line, profile],
+  );
   const changes = new Map((value?.deviations ?? []).map((d) => [d.index, d.text]));
   const rows: StepRow[] = steps.map((s) => ({ index: s.index, section: s.section, original: s.text, modified: changes.get(s.index) ?? null }));
   function setChange(index: number, text: string | null) {
@@ -116,15 +137,22 @@ export function ProtocolRunSection({
         <select
           aria-label="따를 프로토콜"
           className={`${inputCls} w-auto min-w-56 flex-1`}
-          value={value?.protocolId ?? ''}
+          value={!value ? '' : 'protocolId' in value ? value.protocolId : SAVED}
           onChange={(e) => {
             setChosen(true);
             setEditing(null);
+            if (e.target.value === SAVED) return onChange(initialRunEdit(saved));
             const next = items.find((p) => p.id === e.target.value);
             onChange(next ? { protocolId: next.id, protocolUpdatedAt: next.updatedAt, deviations: [] } : null);
           }}
         >
           <option value="">프로토콜 없이 기록</option>
+          {saved && (
+            <option value={SAVED}>
+              {saved.title}
+              {saved.version ? ` · ${saved.version}` : ''} · 기록 당시 단계
+            </option>
+          )}
           {PROTOCOL_FOLDERS.map((f) => {
             const inFolder = items.filter((p) => p.folder === f);
             return inFolder.length ? (
@@ -144,7 +172,10 @@ export function ProtocolRunSection({
       {!items.length && (
         <p className="mt-2 text-xs text-fg-muted">이 세포주에 저장된 프로토콜이 없습니다. 세포주의 프로토콜 탭에서 폴더별로 추가하세요.</p>
       )}
-      {protocol && (
+      {editingRecord && value && 'protocolId' in value && (
+        <p className="mt-1.5 text-xs text-warning">현재 프로토콜 본문으로 이 기록의 단계를 새로 저장합니다. 기록 당시 단계는 대체됩니다.</p>
+      )}
+      {(protocol || revising) && (
         <>
           <p className="mt-1.5 text-xs text-fg-muted">
             단계의 <strong>이번만 수정</strong>은 이 기록에만 남습니다. 원본 프로토콜은 바뀌지 않으며 기록에는 원래 단계가 취소선으로 함께 남습니다.
@@ -230,5 +261,20 @@ export function ProtocolRunView({ run }: { run: ProtocolRun }) {
         <StepList steps={run.steps} />
       </div>
     </details>
+  );
+}
+
+/** A record's step changes at a glance (journal rows): original struck through, then what was actually done. */
+export function ProtocolChanges({ run }: { run: ProtocolRun }) {
+  const changed = changedSteps(run);
+  if (!changed.length) return null;
+  return (
+    <ul className="protocol-run-inline" aria-label={`${run.title} 이번 변경`}>
+      {changed.map((step) => (
+        <li key={step.index} title={`${step.original}\n→ ${step.modified || '생략'}`}>
+          <strong>{step.modified ? step.modified.replace(/\s+/g, ' ') : '이번에는 생략'}</strong> ← <s>{step.original.replace(/\s+/g, ' ')}</s>
+        </li>
+      ))}
+    </ul>
   );
 }

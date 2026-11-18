@@ -38,6 +38,17 @@ export interface CultureExecutionPlan {
     }[];
   } | null;
 }
+/** Heading line of the condition snapshot appended to an operation note. */
+export const CONDITION_SNAPSHOT_HEADING = '[사용 조건 스냅샷 · 실행 완료/외부 검증을 의미하지 않음]';
+/**
+ * A note split into what the user wrote and the condition snapshot the app appended to it. Matches on the heading's
+ * start, so snapshots with an earlier heading wording split too.
+ */
+export function splitConditionSnapshot(note: string): { text: string; snapshot: string } {
+  const at = note.indexOf('\n[사용 조건 스냅샷');
+  if (at < 0) return { text: note.trim(), snapshot: '' };
+  return { text: note.slice(0, at).trim(), snapshot: note.slice(at).trim() };
+}
 export const PLAN_STAGE_LABELS: Record<PlanStage, string> = {
   stock: 'Stock 입고',
   thaw: '해동',

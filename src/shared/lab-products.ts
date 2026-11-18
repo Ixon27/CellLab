@@ -145,7 +145,8 @@ export function validateVesselUse(raw: unknown): CultureVesselUse {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return fail('용기 사용 정보 형식이 올바르지 않습니다');
   const r = raw as Record<string, unknown>;
   const vesselProductId = str(r.vesselProductId, '용기 제품', 120, true);
-  if (typeof r.usedWells !== 'number' || !Number.isInteger(r.usedWells) || r.usedWells < 1) return fail('사용한 well 수는 1 이상의 정수여야 합니다');
+  if (typeof r.usedWells !== 'number' || !Number.isInteger(r.usedWells) || r.usedWells < 1 || r.usedWells > MAX_USED_WELLS)
+    return fail(`용기·well 수는 1–${MAX_USED_WELLS} 사이의 정수여야 합니다`);
   let mediumMl: number | null = null;
   if (r.mediumMl !== undefined && r.mediumMl !== null) {
     if (typeof r.mediumMl !== 'number' || !Number.isFinite(r.mediumMl) || r.mediumMl <= 0 || r.mediumMl > 100000)
@@ -155,20 +156,23 @@ export function validateVesselUse(raw: unknown): CultureVesselUse {
   return { vesselProductId, usedWells: r.usedWells, mediumMl };
 }
 
-/** Used wells must fit in the product. Throws a Korean message otherwise. */
-export function assertUsedWells(use: CultureVesselUse, product: VesselProduct): void {
-  if (use.usedWells > product.wellsPerUnit) fail(`사용한 well 수(${use.usedWells})가 용기의 well 수(${product.wellsPerUnit})보다 많습니다`);
-}
+/** Upper bound on wells/vessels in one culture record (sanity limit, e.g. 20 plates × 96 wells). */
+export const MAX_USED_WELLS = 2000;
 
 /** Total growth area (cm²) of the wells in use; null when the product has no area on record. */
 export function vesselArea(product: Pick<VesselProduct, 'areaCm2PerWell'>, usedWells: number): number | null {
-  if (!Number.isInteger(usedWells) || usedWells < 1) return fail('사용한 well 수는 1 이상의 정수여야 합니다');
+  if (!Number.isInteger(usedWells) || usedWells < 1) return fail('용기·well 수는 1 이상의 정수여야 합니다');
   return product.areaCm2PerWell === null ? null : product.areaCm2PerWell * usedWells;
 }
 
-/** Short human text for a use, e.g. "12-well 3/12 well" (product label when not a plate). */
+/**
+ * Short human text for a use. `usedWells` counts wells across all units: dishes/flasks (1 well each) read as a vessel
+ * count ("60 mm dish × 2"), plates as wells with the plate count when more than one ("6-well · 8 well (plate 2개)").
+ */
 export function formatVesselUse(product: Pick<VesselProduct, 'label' | 'wellsPerUnit'>, usedWells: number): string {
-  return product.wellsPerUnit > 1 ? `${product.label} · ${usedWells}/${product.wellsPerUnit} well` : product.label;
+  if (product.wellsPerUnit === 1) return usedWells > 1 ? `${product.label} × ${usedWells}` : product.label;
+  const plates = Math.ceil(usedWells / product.wellsPerUnit);
+  return `${product.label} · ${usedWells} well${plates > 1 ? ` (plate ${plates}개)` : ''}`;
 }
 
 // ---------------------------------------------------------------------------------------------

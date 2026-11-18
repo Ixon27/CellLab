@@ -78,7 +78,7 @@ describe('실험노트 내보내기', () => {
     expect(headings).toEqual(['## 2026-11-01 (일)', '## 2026-11-02 (월)', '## 2026-11-03 (화)', '## 2026-11-05 (목)', '## 2026-11-06 (금)', '## 2026-11-10 (화)', '## 2026-11-12 (목)']);
     expect(md).toContain('### 14:30 · TCMK-1-P5-T1 · P5 · 배지 교체');
     expect(md).toContain('### 10:00 · TCMK-1-P5-T1 · P5 · 관찰');
-    expect(md).toContain('### 09:00 · TCMK-1-P5-T1 · P5 · 메모');
+    expect(md).toContain('### 09:00 · TCMK-1-P5-T1 · P5 · 해동');
     expect(md).toContain('Confluency 70%');
     expect(md).toContain('부분 교환 · DMEM + 10% FBS · 제거 2 mL / 추가 5 mL');
     expect(md).toContain('형태: 방추형');

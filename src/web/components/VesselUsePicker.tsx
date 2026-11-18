@@ -3,6 +3,8 @@ import {
   isReferenceVesselId,
   SPEC_STATUS_LABELS,
   SURFACE_LABELS,
+  formatVesselUse,
+  MAX_USED_WELLS,
   vesselArea,
   type CultureVesselUse,
   type VesselProduct,
@@ -58,19 +60,25 @@ export function VesselUsePicker({
   const { items, error } = useVesselProducts();
   const [productId, setProductId] = useState(value?.vesselProductId ?? '');
   const [wells, setWells] = useState(numberText(value?.usedWells));
-  const [medium, setMedium] = useState(numberText(value?.mediumMl));
+  // Medium is typed per dish/well (all the same) and stored as the total over the vessels in use.
+  const perVessel = (use: CultureVesselUse | null) =>
+    use?.mediumMl == null || !use.usedWells ? '' : String(Number((use.mediumMl / use.usedWells).toPrecision(6)));
+  const [medium, setMedium] = useState(() => perVessel(value));
 
   // Follow an external change (e.g. a dialog switching to another culture) without fighting local typing.
   useEffect(() => {
     if (!value) return;
     setProductId(value.vesselProductId);
     setWells((text) => (Number(text) === value.usedWells ? text : String(value.usedWells)));
-    setMedium((text) => (text.trim() !== '' && Number(text) === value.mediumMl ? text : numberText(value.mediumMl)));
+    setMedium((text) =>
+      text.trim() !== '' && value.mediumMl !== null && Math.abs(Number(text) * value.usedWells - value.mediumMl) < 1e-6 ? text : perVessel(value),
+    );
   }, [value?.vesselProductId, value?.usedWells, value?.mediumMl]);
 
   const product = useMemo(() => items?.find((p) => p.id === productId) ?? null, [items, productId]);
   const usedWells = Number(wells);
-  const wellsValid = wells.trim() !== '' && Number.isInteger(usedWells) && usedWells >= 1 && (!product || usedWells <= product.wellsPerUnit);
+  const wellsValid = wells.trim() !== '' && Number.isInteger(usedWells) && usedWells >= 1 && usedWells <= MAX_USED_WELLS;
+  const countLabel = product && product.wellsPerUnit > 1 ? '사용한 well 수' : '용기 개수';
   const mediumNum = medium.trim() === '' ? null : Number(medium);
   const mediumValid = mediumNum === null || (Number.isFinite(mediumNum) && mediumNum > 0);
 
@@ -78,12 +86,12 @@ export function VesselUsePicker({
     const p = items?.find((x) => x.id === id) ?? null;
     const n = Number(w);
     const mm = m.trim() === '' ? null : Number(m);
-    const ok = p && w.trim() !== '' && Number.isInteger(n) && n >= 1 && n <= p.wellsPerUnit && (mm === null || (Number.isFinite(mm) && mm > 0));
-    onChange(ok ? { vesselProductId: id, usedWells: n, mediumMl: withMedium ? mm : null } : null, ok ? p : null);
+    const ok = p && w.trim() !== '' && Number.isInteger(n) && n >= 1 && n <= MAX_USED_WELLS && (mm === null || (Number.isFinite(mm) && mm > 0));
+    onChange(ok ? { vesselProductId: id, usedWells: n, mediumMl: withMedium && mm !== null ? mm * n : null } : null, ok ? p : null);
   };
 
   const area = product && wellsValid ? vesselArea(product, usedWells) : null;
-  const range = product && wellsValid ? mediumRangeText(product, usedWells) : null;
+  const range = product && wellsValid ? mediumRangeText(product, 1) : null;
   const mine = items?.filter((p) => !isReferenceVesselId(p.id)) ?? [];
   const refs = items?.filter((p) => isReferenceVesselId(p.id)) ?? [];
 
@@ -134,13 +142,16 @@ export function VesselUsePicker({
         <>
           <div className={`grid gap-2 ${withMedium ? 'sm:grid-cols-2' : ''}`}>
             <label className="block text-[12.5px] font-medium text-fg">
-              사용한 well 수 {product.wellsPerUnit > 1 && <span className="font-normal text-fg-muted">(1–{product.wellsPerUnit})</span>}
+              {countLabel}{' '}
+              <span className="font-normal text-fg-muted">
+                {product.wellsPerUnit > 1 ? `(plate당 ${product.wellsPerUnit} well · 여러 plate면 합계)` : '(dish·flask 몇 개)'}
+              </span>
               <input
                 className={`${inputCls} mt-1`}
-                aria-label="사용한 well 수"
+                aria-label={countLabel}
                 type="number"
                 min={1}
-                max={product.wellsPerUnit}
+                max={MAX_USED_WELLS}
                 step={1}
                 disabled={disabled}
                 value={wells}
@@ -152,10 +163,10 @@ export function VesselUsePicker({
             </label>
             {withMedium && (
               <label className="block text-[12.5px] font-medium text-fg">
-                배지 부피 (mL, 선택)
+                {product.wellsPerUnit > 1 ? 'well 1개당 배지 (mL, 선택)' : '용기 1개당 배지 (mL, 선택)'}
                 <input
                   className={`${inputCls} mt-1`}
-                  aria-label="배지 부피 mL"
+                  aria-label="용기 1개당 배지 mL"
                   type="number"
                   min={0}
                   step="any"
@@ -171,11 +182,17 @@ export function VesselUsePicker({
           </div>
           {!wellsValid && (
             <p className="text-[12px] text-warning">
-              {wells.trim() === '' ? 'well 수를 입력하세요.' : `well 수는 1–${product.wellsPerUnit} 사이의 정수여야 합니다.`} 입력 전에는 구조화된 용기가 저장되지 않습니다.
+              {wells.trim() === '' ? `${countLabel}를 입력하세요.` : `${countLabel}는 1–${MAX_USED_WELLS} 사이의 정수여야 합니다.`} 입력 전에는 구조화된 용기가 저장되지 않습니다.
             </p>
           )}
           {!mediumValid && <p className="text-[12px] text-warning">배지 부피는 0보다 큰 숫자(mL)여야 합니다.</p>}
           <div className="grid gap-1 rounded-lg bg-sunken px-3 py-2 text-[12px] text-fg-muted">
+            {wellsValid && (
+              <strong className="text-fg">
+                {formatVesselUse(product, usedWells)}
+                {mediumValid && mediumNum !== null && usedWells > 1 && ` · 배지 합계 ${Number((mediumNum * usedWells).toPrecision(6))} mL`}
+              </strong>
+            )}
             <VesselSpecBadges product={product} />
             <span>
               총 면적{' '}
@@ -190,7 +207,7 @@ export function VesselUsePicker({
               권장 배지{' '}
               {range ? (
                 <>
-                  <strong className="text-fg">{range}</strong> · 출처: {product.sourceLabel}
+                  <strong className="text-fg">{range}</strong> /{product.wellsPerUnit > 1 ? 'well' : '용기'} · 출처: {product.sourceLabel}
                 </>
               ) : (
                 '미등록 (제품 사양을 확인해 용기 제품에 입력하세요)'

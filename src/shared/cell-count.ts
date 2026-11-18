@@ -41,10 +41,28 @@ export function targetCellsFor(vessel: string, densityPerCm2: number): number | 
 
 const SUPERSCRIPT: Record<string, string> = { '-': '⁻', '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴', '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹' };
 
+/** "10⁶" style power of ten. */
+export function powerOfTen(exponent: number): string {
+  return `10${String(exponent).replace(/./g, (ch) => SUPERSCRIPT[ch])}`;
+}
+
 /** Cell counts as lab notation, e.g. 1000000 → "1.00 × 10⁶". */
 export function formatCount(n: number): string {
   if (n === 0) return '0';
   const [mantissa, exponent] = n.toExponential(2).split('e');
-  const power = String(Number(exponent)).replace(/./g, (ch) => SUPERSCRIPT[ch]);
-  return `${mantissa} × 10${power}`;
+  return `${mantissa} × ${powerOfTen(Number(exponent))}`;
+}
+
+/**
+ * A counter-screen number as mantissa and power of ten. Reads "1.46x10e7", "1.46×10^7", "1.46e7" or a plain number;
+ * null when unreadable.
+ */
+export function parseScientific(text: string): { mantissa: number; exponent: number } | null {
+  const sci = /^\s*(\d*\.?\d+)\s*(?:[x×*]\s*10\s*(?:\^|e)?|e)\s*([+-]?\d+)\s*$/i.exec(text);
+  if (sci) return { mantissa: Number(sci[1]), exponent: Number(sci[2]) };
+  const n = Number(text);
+  if (!text.trim() || !Number.isFinite(n) || n < 0) return null;
+  if (n === 0) return { mantissa: 0, exponent: 0 };
+  const exponent = Math.floor(Math.log10(n));
+  return { mantissa: Number((n / 10 ** exponent).toPrecision(6)), exponent };
 }

@@ -1,4 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
+import { nanoid } from 'nanoid';
 import { PATHS } from './config';
 import { seedBuiltins } from './seed';
 import { CULTURE_OPERATION_DDL } from './culture-operations-schema';
@@ -86,6 +87,15 @@ CREATE TABLE IF NOT EXISTS culture_log_protocols(
   protocol_id TEXT REFERENCES protocols(id) ON DELETE SET NULL,
   title TEXT NOT NULL, version TEXT NOT NULL, protocol_updated_at TEXT NOT NULL,
   steps TEXT NOT NULL, created_at TEXT NOT NULL);
+-- Vessels of a culture that left it on their own (passaged or discarded); vessels without a row are still active.
+-- The row goes with the record that changed it, so undoing that record makes the vessel active again.
+CREATE TABLE IF NOT EXISTS culture_plates(
+  culture_id TEXT NOT NULL REFERENCES cultures(id) ON DELETE CASCADE,
+  plate_no INTEGER NOT NULL CHECK(plate_no >= 1),
+  status TEXT NOT NULL CHECK(status IN ('passaged','discarded')),
+  at TEXT NOT NULL,
+  log_id TEXT NOT NULL REFERENCES culture_logs(id) ON DELETE CASCADE,
+  PRIMARY KEY(culture_id, plate_no));
 -- Earlier per-line SOP copies become that line's general protocols.
 INSERT OR IGNORE INTO cell_protocols(protocol_id,cell_line_id,folder,sort)
   SELECT protocol_id,cell_line_id,'general',0 FROM protocol_copies
@@ -103,6 +113,59 @@ export function migrateCultureProfiles(database: DatabaseSync): void {
   }
 }
 migrateCultureProfiles(db);
+
+/**
+ * Link thaw/passage/freeze records written before records carried links to what they made, and give every thawed culture
+ * its thaw record back (earlier versions let it be deleted on its own). Linked records are skipped, so this is idempotent.
+ */
+export function linkOperationRecords(database: DatabaseSync): void {
+  type Row = { id: string; culture_id: string; at: string; note: string; extra: string };
+  const extraOf = (row: Row) => parseJsonColumn<Record<string, string>>(row.extra, {});
+  const setExtra = database.prepare('UPDATE culture_logs SET extra=? WHERE id=?');
+  database.exec('BEGIN');
+  try {
+    const thawed = database
+      .prepare('SELECT c.id,c.parent_lot_id,c.started_at,c.created_at,l.label FROM cultures c JOIN cryo_lots l ON l.id=c.parent_lot_id')
+      .all() as { id: string; parent_lot_id: string; started_at: string; created_at: string; label: string }[];
+    for (const culture of thawed) {
+      const notes = database.prepare("SELECT * FROM culture_logs WHERE culture_id=? AND type='note' ORDER BY at,created_at,id").all(culture.id) as Row[];
+      if (notes.some((n) => extraOf(n).thawLotId)) continue;
+      const legacy = notes.find((n) => n.note.startsWith('해동 ('));
+      if (legacy) {
+        const vials = /, (\d+) vial\)/.exec(legacy.note)?.[1];
+        setExtra.run(JSON.stringify({ ...extraOf(legacy), thawLotId: culture.parent_lot_id, ...(vials ? { thawVials: vials } : {}) }), legacy.id);
+      } else {
+        database
+          .prepare("INSERT INTO culture_logs(id,culture_id,at,type,extra,note,created_at) VALUES(?,?,?,'note',?,?,?)")
+          .run(nanoid(12), culture.id, culture.started_at, JSON.stringify({ thawLotId: culture.parent_lot_id }), `해동 (${culture.label})`, culture.created_at);
+      }
+    }
+    const claimed = new Set<string>();
+    for (const row of database.prepare("SELECT * FROM culture_logs WHERE type='passage' ORDER BY at,created_at,id").all() as Row[]) {
+      const extra = extraOf(row);
+      if (extra.childCultureIds !== undefined) continue;
+      const ids = (database.prepare('SELECT id FROM cultures WHERE parent_culture_id=? AND started_at=? ORDER BY created_at,id').all(row.culture_id, row.at) as { id: string }[])
+        .map((c) => c.id)
+        .filter((id) => !claimed.has(id));
+      for (const id of ids) claimed.add(id);
+      setExtra.run(JSON.stringify({ ...extra, childCultureIds: ids.join(',') }), row.id);
+    }
+    for (const row of database.prepare("SELECT * FROM culture_logs WHERE type='freeze' ORDER BY at,created_at,id").all() as Row[]) {
+      const extra = extraOf(row);
+      if (extra.frozenLotId !== undefined) continue;
+      const lot = (database.prepare("SELECT id FROM cryo_lots WHERE source_culture_id=? AND event_at=? AND origin='frozen' ORDER BY created_at,id").all(row.culture_id, row.at) as { id: string }[]).find(
+        (l) => !claimed.has(l.id),
+      );
+      if (lot) claimed.add(lot.id);
+      setExtra.run(JSON.stringify({ ...extra, frozenLotId: lot?.id ?? '' }), row.id);
+    }
+    database.exec('COMMIT');
+  } catch (error) {
+    database.exec('ROLLBACK');
+    throw error;
+  }
+}
+linkOperationRecords(db);
 
 export const now = () => new Date().toISOString();
 

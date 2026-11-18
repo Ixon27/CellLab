@@ -2,6 +2,7 @@ import { Marked } from 'marked';
 import type { CellLineDto, CultureDto, LogDto, LogType, LotDto } from '../shared/cell-line';
 import { formatCount } from '../shared/cell-count';
 import { FEED_MODE_LABELS, RESERVED_EXTRA_KEYS } from '../shared/culture-operations';
+import { splitConditionSnapshot } from '../shared/culture-plan';
 import { protocolRunMarkdown } from '../shared/protocol-run';
 import type { LogRow } from './cell-lines';
 import { getLineRow, toCultureDtos, toLineDto, toLogDtos, toLotDtos } from './cell-lines';
@@ -31,7 +32,6 @@ const STATUS_LABELS: Record<CultureDto['status'], string> = {
 };
 const MYCOPLASMA_LABELS = { negative: '음성', positive: '양성', pending: '검사 중' } as const;
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
-const SNAPSHOT_MARK = '\n[사용 조건 스냅샷';
 /** Total bytes of photos embedded in one HTML notebook; later photos are listed as omitted. */
 const EMBED_PHOTO_BUDGET = 40 * 1024 * 1024;
 
@@ -160,12 +160,6 @@ function photoLines(log: LogDto, embed: boolean, budget: { left: number }): stri
   return lines;
 }
 
-/** Split an appended execution snapshot off a note. */
-function splitSnapshot(note: string): { text: string; snapshot: string } {
-  const at = note.indexOf(SNAPSHOT_MARK);
-  if (at < 0) return { text: note.trim(), snapshot: '' };
-  return { text: note.slice(0, at).trim(), snapshot: note.slice(at).trim() };
-}
 function snapshotQuote(snapshot: string): string[] {
   const lines = snapshot
     .split('\n')
@@ -245,7 +239,7 @@ export function buildNotebookMarkdown(lineId: string, query: NotebookQuery, embe
   const lastSnapshot = new Map<string, string>();
   const logEntries: Entry[] = logs.map((log) => {
     const culture = byId.get(log.cultureId);
-    const { text, snapshot } = splitSnapshot(log.note);
+    const { text, snapshot } = splitConditionSnapshot(log.note);
     const body = logBullets(log, photoLines(log, embedPhotos, budget));
     if (text) body.push(block(text), '');
     // Printed once per culture until the condition set or work changes.
@@ -257,7 +251,7 @@ export function buildNotebookMarkdown(lineId: string, query: NotebookQuery, embe
     return {
       at: log.at,
       cultureId: log.cultureId,
-      heading: `${inline(culture?.label ?? '삭제된 배양')} · P${culture?.passage ?? '?'} · ${LOG_LABELS[log.type]}`,
+      heading: `${inline(culture?.label ?? '삭제된 배양')} · P${culture?.passage ?? '?'} · ${log.operation === 'thaw' ? '해동' : LOG_LABELS[log.type]}`,
       body,
     };
   });

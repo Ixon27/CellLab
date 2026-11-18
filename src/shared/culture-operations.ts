@@ -48,10 +48,93 @@ export interface FeedInput {
 
 export const FEED_EXTRA_KEYS = ['mediumMode', 'removedMl', 'addedMl', 'mediumLabel', 'mediumProductId', 'mediumDetail'] as const;
 export const OBSERVATION_EXTRA_KEYS = ['morphology'] as const;
-export const PASSAGE_EXTRA_KEYS = ['splitRatio', 'dissociationReagent', 'seededCells', 'childCount'] as const;
+export const PASSAGE_EXTRA_KEYS = ['splitRatio', 'dissociationReagent', 'seededCells', 'childCount', 'leftoverHandling'] as const;
 export const SEEDING_EXTRA_KEYS = ['seedingCells', 'seedingVolumeMl', 'seedingDensityPerCm2', 'seedingParent'] as const;
+/**
+ * Links from an operation record to the lineage it changed: a thaw note names its lot and vials, a passage log its
+ * new cultures (comma-separated ids) and the plates it took cells from, a freeze log the lot it made, a plate-discard
+ * note the plates it discarded. Editing or undoing the record follows these links.
+ */
+export const LINEAGE_EXTRA_KEYS = ['thawLotId', 'thawVials', 'childCultureIds', 'frozenLotId', 'sourcePlates', 'discardedPlates'] as const;
+
+/**
+ * Values read off an automated cell counter's result screen (LUNA-type), kept with the record they were counted for.
+ * Live concentration, viability and the live cells in the suspension go in the record's own columns; these are the rest.
+ * Such counters report concentrations of the original suspension (their dilution factor already applied).
+ */
+export const COUNT_FIELDS = [
+  { key: 'countTotalPerMl', label: 'Total cell concentration', unit: 'cells/mL', integer: false },
+  { key: 'countDeadPerMl', label: 'Dead cell concentration', unit: 'cells/mL', integer: false },
+  { key: 'countAverageSizeUm', label: 'Average size', unit: 'µm', integer: false },
+  { key: 'countTotalCounted', label: 'Total cell number', unit: 'cells', integer: true },
+  { key: 'countLiveCounted', label: 'Live cell number', unit: 'cells', integer: true },
+  { key: 'countDeadCounted', label: 'Dead cell number', unit: 'cells', integer: true },
+  { key: 'countDilution', label: 'Dilution factor', unit: '', integer: false },
+  { key: 'countSuspensionMl', label: 'Suspension volume', unit: 'mL', integer: false },
+] as const;
+export type CountKey = (typeof COUNT_FIELDS)[number]['key'];
+export type CellCountExtras = Partial<Record<CountKey, number>>;
+export const COUNT_EXTRA_KEYS: readonly CountKey[] = COUNT_FIELDS.map((f) => f.key);
+/** Shape-check counter values (all optional, non-negative) into log.extra strings. */
+export function validateCountExtras(raw: unknown): Record<string, string> {
+  if (raw === null || raw === undefined) return {};
+  if (typeof raw !== 'object' || Array.isArray(raw)) throw new Error('세포 계수 값 형식이 올바르지 않습니다');
+  const out: Record<string, string> = {};
+  for (const field of COUNT_FIELDS) {
+    const value = (raw as Record<string, unknown>)[field.key];
+    if (value === undefined || value === null) continue;
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || (field.integer && !Number.isInteger(value)))
+      throw new Error(`${field.label}을(를) 0 이상의 ${field.integer ? '정수' : '숫자'}로 입력하세요`);
+    out[field.key] = String(value);
+  }
+  const unknown = Object.keys(raw).find((k) => !(COUNT_EXTRA_KEYS as readonly string[]).includes(k));
+  if (unknown) throw new Error(`알 수 없는 세포 계수 항목입니다: ${unknown}`);
+  return out;
+}
+export function countFromExtra(extra: Record<string, string>): CellCountExtras | null {
+  const out: CellCountExtras = {};
+  for (const key of COUNT_EXTRA_KEYS) if (extra[key] !== undefined && Number.isFinite(Number(extra[key]))) out[key] = Number(extra[key]);
+  return Object.keys(out).length ? out : null;
+}
 /** log.extra names the app writes itself; users cannot use them as free items. */
-export const RESERVED_EXTRA_KEYS: readonly string[] = [...FEED_EXTRA_KEYS, ...OBSERVATION_EXTRA_KEYS, ...PASSAGE_EXTRA_KEYS, ...SEEDING_EXTRA_KEYS];
+export const RESERVED_EXTRA_KEYS: readonly string[] = [
+  ...FEED_EXTRA_KEYS,
+  ...OBSERVATION_EXTRA_KEYS,
+  ...PASSAGE_EXTRA_KEYS,
+  ...SEEDING_EXTRA_KEYS,
+  ...COUNT_EXTRA_KEYS,
+  ...LINEAGE_EXTRA_KEYS,
+];
+
+/** Lineage operation a record stands for; null for ordinary records. */
+export type LogOperation = 'thaw' | 'passage' | 'freeze' | 'discard';
+export function logOperation(type: string, extra: Record<string, string>): LogOperation | null {
+  if (type === 'passage' || type === 'freeze') return type;
+  if (type === 'note' && extra.discardedPlates) return 'discard';
+  return type === 'note' && extra.thawLotId ? 'thaw' : null;
+}
+export function childCultureIds(extra: Record<string, string>): string[] {
+  return (extra.childCultureIds ?? '').split(',').filter(Boolean);
+}
+/** Plate numbers (1-based) stored as "1,3". */
+export function plateList(text: string | undefined): number[] {
+  return (text ?? '')
+    .split(',')
+    .map(Number)
+    .filter((n) => Number.isInteger(n) && n > 0);
+}
+
+/* ───────────── Plates of one culture ───────────── */
+
+/** A culture spread over several identical vessels; each vessel ("plate") can be passaged or discarded on its own. */
+export const PLATE_STATUSES = ['active', 'passaged', 'discarded'] as const;
+export type PlateStatus = (typeof PLATE_STATUSES)[number];
+export const PLATE_STATUS_LABELS: Record<PlateStatus, string> = { active: '활성', passaged: '계대함', discarded: '폐기' };
+/** Dishes/flasks count one each; multi-well plates count whole plates. */
+export function plateCountOf(use: { usedWells: number; product: { wellsPerUnit: number } } | null): number {
+  if (!use) return 1;
+  return use.product.wellsPerUnit > 1 ? Math.ceil(use.usedWells / use.product.wellsPerUnit) : use.usedWells;
+}
 
 function amount(raw: unknown, label: string, allowZero: boolean): number {
   const value = typeof raw === 'string' && /^\d+(\.\d+)?$/.test(raw.trim()) ? Number(raw) : raw;
@@ -153,6 +236,40 @@ export interface PassageRecord {
   seededCells: number | null;
   leftoverCells: number | null;
   childCount: number | null;
+  /** What happened to the recovered cells that were not seeded; null on older records. */
+  leftoverHandling: LeftoverHandling | null;
+}
+/** Unseeded cells after a passage: thrown away, left growing in the original vessel, or frozen as stock. */
+export const LEFTOVER_HANDLINGS = ['discarded', 'kept', 'frozen'] as const;
+export type LeftoverHandling = (typeof LEFTOVER_HANDLINGS)[number];
+export const LEFTOVER_LABELS: Record<LeftoverHandling, string> = {
+  discarded: '폐기',
+  kept: '기존 용기에서 계속 배양',
+  frozen: '동결 (stock)',
+};
+export function isLeftoverHandling(raw: unknown): raw is LeftoverHandling {
+  return typeof raw === 'string' && (LEFTOVER_HANDLINGS as readonly string[]).includes(raw);
+}
+
+/** "1:N" split: how far the cell density was divided, i.e. after over before in matching units, N to one decimal. */
+export function splitRatio(before: number, after: number): string {
+  if (!Number.isFinite(before) || before <= 0 || !Number.isFinite(after) || after <= 0) throw new Error('분주 비율을 계산할 수 없습니다');
+  return `1:${Number((after / before).toFixed(1))}`;
+}
+/** N of a "1:N" split, also read from "1/5", "2:10" or a bare "5"; null when unreadable. */
+export function splitFactor(text: string): number | null {
+  const pair = /^\s*(\d+(?:\.\d+)?)\s*[:/]\s*(\d+(?:\.\d+)?)\s*$/.exec(text);
+  const n = pair ? Number(pair[2]) / Number(pair[1]) : text.trim() ? Number(text.trim()) : NaN;
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+/**
+ * Share of the recovered cells (and so of the pellet suspension) each new vessel takes in a 1:N split: the old density
+ * divided by N over the new vessel's size. `before` and `after` share one unit (cm², or vessel counts when an area is
+ * unknown). With all cells seeded the split is after ÷ before, so 1 dish into 5 equal dishes is 1:5 either way.
+ */
+export function splitShares(before: number, after: number[], factor: number): number[] {
+  if (!(before > 0) || !(factor > 0)) throw new Error('분주 비율 계산 값을 확인하세요');
+  return after.map((size) => size / before / factor);
 }
 
 /** Cells to seed and the suspension volume that carries them. */
@@ -247,6 +364,48 @@ export interface FreezePlanRecord extends FreezeAllocation {
   targetCellsPerVial: number;
   volumePerVialMl: number;
   desiredVials: number | null;
+  /** How each vial was filled from a counted suspension; absent when cells were resuspended in freezing medium directly. */
+  mix?: FreezeMix | null;
+}
+
+/** Per vial: counted suspension plus freezing medium up to the vial volume. */
+export interface FreezeMixInput {
+  suspensionCellsPerMl: number;
+  targetCellsPerVial: number;
+  volumePerVialMl: number;
+  vials: number;
+  /** DMSO % of the freezing medium as supplied, if known. */
+  freezingMediumDmsoPct: number | null;
+}
+export interface FreezeMix extends FreezeMixInput {
+  suspensionPerVialMl: number;
+  freezingMediumPerVialMl: number;
+  totalSuspensionMl: number;
+  totalFreezingMediumMl: number;
+  /** DMSO % in the vial after mixing; null when the medium's DMSO % was not entered. */
+  finalDmsoPct: number | null;
+}
+export function freezeMix(i: FreezeMixInput): FreezeMix {
+  if (!Number.isFinite(i.suspensionCellsPerMl) || i.suspensionCellsPerMl <= 0) throw new Error('현탁액 생세포 농도는 0보다 커야 합니다');
+  if (!Number.isFinite(i.targetCellsPerVial) || i.targetCellsPerVial <= 0) throw new Error('바이알당 목표 세포 수는 0보다 커야 합니다');
+  if (!Number.isFinite(i.volumePerVialMl) || i.volumePerVialMl <= 0) throw new Error('바이알당 부피는 0보다 커야 합니다');
+  if (!Number.isInteger(i.vials) || i.vials < 0) throw new Error('바이알 수를 확인하세요');
+  const dmso = i.freezingMediumDmsoPct;
+  if (dmso !== null && (!Number.isFinite(dmso) || dmso < 0 || dmso > 100)) throw new Error('동결 배지 DMSO 농도는 0–100%입니다');
+  const suspension = i.targetCellsPerVial / i.suspensionCellsPerMl;
+  if (suspension > i.volumePerVialMl * (1 + 1e-9))
+    throw new Error(
+      `바이알당 현탁액 ${Number(suspension.toFixed(3))} mL가 바이알 부피 ${i.volumePerVialMl} mL보다 많습니다. 원심분리 후 더 적은 부피로 다시 현탁하세요`,
+    );
+  const medium = Math.max(0, i.volumePerVialMl - suspension);
+  return {
+    ...i,
+    suspensionPerVialMl: suspension,
+    freezingMediumPerVialMl: medium,
+    totalSuspensionMl: suspension * i.vials,
+    totalFreezingMediumMl: medium * i.vials,
+    finalDmsoPct: dmso === null ? null : (dmso * medium) / i.volumePerVialMl,
+  };
 }
 export type RecoveryStatus = 'unverified' | 'confirmed' | 'poor';
 export const RECOVERY_LABELS: Record<RecoveryStatus, string> = {

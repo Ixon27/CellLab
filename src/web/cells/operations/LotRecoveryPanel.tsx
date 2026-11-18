@@ -47,9 +47,17 @@ export function LotRecoveryPanel({ lot, onSaved }: { lot: LotDto; onSaved(): voi
           <p>
             실제 {plan.vials} vial × {plan.targetCellsPerVial.toLocaleString()} cells · 동결액 {plan.volumePerVialMl} mL/vial
           </p>
-          <p>
-            미배분 {plan.leftoverCells.toLocaleString()} cells · 총 동결액 {plan.resuspendVolumeMl} mL
-          </p>
+          {plan.mix ? (
+            <p>
+              바이알당 현탁액 {Number(plan.mix.suspensionPerVialMl.toFixed(4))} mL + 동결 배지 {Number(plan.mix.freezingMediumPerVialMl.toFixed(4))} mL
+              {plan.mix.finalDmsoPct !== null && ` · 최종 DMSO ${Number(plan.mix.finalDmsoPct.toFixed(2))}%`} · 미배분{' '}
+              {plan.leftoverCells.toLocaleString()} cells
+            </p>
+          ) : (
+            <p>
+              미배분 {plan.leftoverCells.toLocaleString()} cells · 총 동결액 {plan.resuspendVolumeMl} mL
+            </p>
+          )}
         </div>
       ) : (
         <p className="mb-3 text-fg-muted">배분 수치 미기록 (입고·이전 lot)</p>

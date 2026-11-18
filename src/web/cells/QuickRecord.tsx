@@ -7,6 +7,7 @@ import { ObservationForm } from './operations/ObservationForm';
 import { FeedForm } from './operations/OperationForms';
 import { composeOperationNote, isoFromInput, localInput, PlanRecordSection } from './operations/common';
 import { executionProfile } from './culture-plan-state';
+import { sourceCellsPerVial } from './lineage-source';
 
 export function QuickRecord({
   line,
@@ -71,7 +72,16 @@ export function QuickRecord({
       setBusy(false);
     }
   }
-  const props = { line, culture, lot, profiles, initialAt: at, onSaved, onClose: () => setAction(null) };
+  const props = {
+    line,
+    culture,
+    lot,
+    profiles,
+    initialAt: at,
+    defaultCellsPerVial: culture ? sourceCellsPerVial(culture.id, cultures, lots) : null,
+    onSaved,
+    onClose: () => setAction(null),
+  };
   return (
     <section className="workbench-panel cell-quick">
       <h3>오늘의 기록</h3>
@@ -187,7 +197,9 @@ export function QuickRecord({
       {!compatible && (
         <p className="cell-help">
           {type === 'thaw'
-            ? '남은 바이알이 있는 stock을 선택하세요.'
+            ? lot && lot.vialsRemaining === 0
+              ? '남은 바이알이 없습니다. 이 stock에서 해동한 배양과 해동 기록은 오른쪽 선택 패널에서 언제든 수정·취소할 수 있습니다.'
+              : '남은 바이알이 있는 stock을 선택하세요.'
             : culture
               ? '종료된 배양에는 새 작업을 기록할 수 없습니다. 기존 기록은 기록표에서 수정하세요.'
               : '활성 배양을 선택하거나 배양을 입고하세요.'}

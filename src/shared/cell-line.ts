@@ -1,7 +1,18 @@
 import type { CultureFieldKey, CultureProfileFields } from './culture';
 import type { CultureExecutionPlan } from './culture-plan';
 import type { FieldUsage, MediumPurpose } from './literature';
-import type { CultureVesselUseDto, FeedRecord, FreezePlanRecord, LotRecovery, PassageRecord, PhotoDto, RepresentativeThaw } from './culture-operations';
+import type {
+  CellCountExtras,
+  CultureVesselUseDto,
+  FeedRecord,
+  FreezePlanRecord,
+  LogOperation,
+  LotRecovery,
+  PassageRecord,
+  PhotoDto,
+  PlateStatus,
+  RepresentativeThaw,
+} from './culture-operations';
 import type { ProtocolRun } from './protocol-run';
 
 export type GrowthMode = 'adherent' | 'suspension' | 'mixed';
@@ -142,6 +153,8 @@ export interface CultureDto {
   notes: string;
   /** Current vessel assignment with a frozen product snapshot; null for legacy/free-text vessels. */
   vesselUse: CultureVesselUseDto | null;
+  /** The culture's vessels (dishes/flasks, or whole multi-well plates) one by one; 1 for free-text vessels. */
+  plates: { no: number; status: PlateStatus; at: string | null }[];
   createdAt: string;
 }
 
@@ -167,6 +180,12 @@ export interface LogDto {
   photos: PhotoDto[];
   /** Typed view of a passage log; null for other types. */
   passage: PassageRecord | null;
+  /** Lineage operation this record stands for (thaw note, passage, freeze); editing or deleting it changes the lineage. */
+  operation: LogOperation | null;
+  /** Automated counter values recorded with this record (besides live concentration, viability and live cells). */
+  count: CellCountExtras | null;
+  /** The thaw this note records: source lot and vials used by the whole thaw (null = not recorded). */
+  thaw: { lotId: string; vials: number | null } | null;
   /** Protocol followed in this record, with this run's step changes; null when none was attached. */
   protocolRun: ProtocolRun | null;
   createdAt: string;

@@ -36,8 +36,6 @@ function positive(n: unknown, message: string): number {
 }
 function checkEnd(end: VesselEnd, side: string): void {
   if (!Number.isInteger(end.usedWells) || end.usedWells < 1) throw new Error(`${side} 용기의 사용 well 수는 1 이상의 정수여야 합니다`);
-  if (end.usedWells > end.product.wellsPerUnit)
-    throw new Error(`${side} 용기의 사용 well 수(${end.usedWells})가 용기의 well 수(${end.product.wellsPerUnit})보다 많습니다`);
 }
 
 /**

@@ -1,27 +1,35 @@
 import { nanoid } from 'nanoid';
-import type { LogDto } from '../shared/cell-line';
+import type { CultureDto, LogDto, LotDto } from '../shared/cell-line';
 import {
+  COUNT_EXTRA_KEYS,
   FEED_EXTRA_KEYS,
+  LINEAGE_EXTRA_KEYS,
   OBSERVATION_EXTRA_KEYS,
   PASSAGE_EXTRA_KEYS,
   RESERVED_EXTRA_KEYS,
   SEEDING_EXTRA_KEYS,
+  childCultureIds,
   feedFromExtra,
   freezeAllocation,
+  freezeMix,
+  logOperation,
+  plateList,
   passageConservation,
+  validateCountExtras,
   validateFeedInput,
   validateRecovery,
   validateRepresentativeThaw,
 } from '../shared/culture-operations';
 import type { FeedRecord, FreezeAllocation, FreezePlanRecord, LotRecovery, RepresentativeThaw } from '../shared/culture-operations';
-import { assertUsedWells, validateVesselUse, vesselArea } from '../shared/lab-products';
+import { formatVesselUse, validateVesselUse, vesselArea } from '../shared/lab-products';
 import type { CultureVesselUse, VesselProduct } from '../shared/lab-products';
 import type { CultureRow, LogRow, LotRow } from './cell-lines';
 import { activeProfileRow, getLineRow, toCultureDto, toLogDto, toLogDtos, toLotDto } from './cell-lines';
 import { db, now, parseJsonColumn, tx } from './db';
 import { HttpError } from './http-error';
 import { getMediumProduct, getVesselProduct } from './lab-products';
-import { attachProtocolRun } from './protocol-runs';
+import type { LineageAnnotations } from '../shared/lineage';
+import { attachProtocolRun, editProtocolRun } from './protocol-runs';
 
 export type LineageInput = Record<string, unknown>;
 export const LOW_VIAL_THRESHOLD = 2;
@@ -101,12 +109,11 @@ interface ResolvedUse {
   product: VesselProduct;
   warnings: string[];
 }
-/** Shape-check a vessel use, resolve its product and enforce used wells ≤ the product's wells. */
+/** Shape-check a vessel use and resolve its product. */
 function resolveUse(raw: unknown, previousProduct?: VesselProduct): ResolvedUse {
   const use = valid(() => validateVesselUse(raw));
   const product = previousProduct?.id === use.vesselProductId ? previousProduct : getVesselProduct(use.vesselProductId);
   if (!product) throw new HttpError(400, '용기 제품을 찾을 수 없습니다');
-  valid(() => assertUsedWells(use, product));
   const out: string[] = [];
   const { mediumMinMlPerWell: min, mediumMaxMlPerWell: max } = product;
   if (use.mediumMl !== null && min !== null && max !== null) {
@@ -126,13 +133,13 @@ function saveUse(cultureId: string, resolved: ResolvedUse): void {
   db.prepare(
     'INSERT INTO culture_vessel_use(culture_id,vessel_product_id,used_wells,medium_ml,snapshot,updated_at) VALUES(?,?,?,?,?,?) ON CONFLICT(culture_id) DO UPDATE SET vessel_product_id=excluded.vessel_product_id,used_wells=excluded.used_wells,medium_ml=excluded.medium_ml,snapshot=excluded.snapshot,updated_at=excluded.updated_at',
   ).run(cultureId, resolved.use.vesselProductId, resolved.use.usedWells, resolved.use.mediumMl, snapshot, now());
-  db.prepare('UPDATE cultures SET vessel=? WHERE id=?').run(resolved.product.label, cultureId);
+  db.prepare('UPDATE cultures SET vessel=? WHERE id=?').run(formatVesselUse(resolved.product, resolved.use.usedWells), cultureId);
 }
-/** Vessel text plus an optional structured use; the product label becomes the text when a product is chosen. */
+/** Vessel text plus an optional structured use; with a product the text is its label and count ("60 mm dish × 2"). */
 function vesselSpec(b: LineageInput): { vessel: string; resolved: ResolvedUse | null } {
   if (b.vesselUse !== undefined && b.vesselUse !== null) {
     const resolved = resolveUse(b.vesselUse);
-    return { vessel: resolved.product.label, resolved };
+    return { vessel: formatVesselUse(resolved.product, resolved.use.usedWells), resolved };
   }
   return { vessel: text(b.vessel, '배양 용기', true), resolved: null };
 }
@@ -159,7 +166,14 @@ function insertCulture(
   return toCultureDto(getCulture(id));
 }
 
-/** Update a culture's own fields. A structured vessel use replaces the free-text vessel; `vesselUse: null` clears it. */
+/** Statuses set by hand (배양 종료) rather than by a passage or freeze record; only these may be changed back. */
+const MANUAL_STATUSES: CultureRow['status'][] = ['active', 'harvested', 'discarded', 'contaminated'];
+
+/**
+ * Update a culture's own fields at any time. A structured vessel use replaces the free-text vessel; `vesselUse: null` clears it.
+ * The start time moves the culture's thaw record with it. A hand-set end (수확·폐기·오염) can be changed or undone; a
+ * split/frozen culture returns to active only by undoing that passage or freeze.
+ */
 export function updateCulture(cultureId: string, b: LineageInput) {
   return tx(() => {
     const culture = getCulture(cultureId);
@@ -169,14 +183,46 @@ export function updateCulture(cultureId: string, b: LineageInput) {
     if (b.vesselUse !== undefined && b.vesselUse !== null) resolved = resolveUse(b.vesselUse, current?.product);
     else if (current && b.vesselUse !== null && b.vessel !== undefined && vessel !== culture.vessel)
       throw new HttpError(400, '용기 제품이 지정된 배양입니다. 용기 제품 선택으로 변경하세요');
-    if (resolved) vessel = resolved.product.label;
-    db.prepare('UPDATE cultures SET label=?,vessel=?,notes=?,profile_id=? WHERE id=?').run(
+    if (resolved) vessel = formatVesselUse(resolved.product, resolved.use.usedWells);
+    const startedAt = b.startedAt === undefined ? culture.started_at : eventTime(b.startedAt);
+    const passage = b.passage === undefined ? culture.passage : numeric(b.passage, 'Passage', 0, Number.MAX_SAFE_INTEGER, true);
+    let status = culture.status;
+    if (b.status !== undefined && b.status !== culture.status) {
+      if (!MANUAL_STATUSES.includes(culture.status))
+        throw new HttpError(409, '계대·동결로 끝난 배양은 그 계대·동결 기록을 취소하면 다시 활성이 됩니다');
+      if (!MANUAL_STATUSES.includes(b.status as CultureRow['status'])) throw new HttpError(400, '배양 상태를 확인하세요');
+      status = b.status as CultureRow['status'];
+    }
+    let endedAt = culture.ended_at;
+    let endNote = culture.end_note;
+    if (status === 'active') {
+      endedAt = null;
+      endNote = null;
+    } else if (MANUAL_STATUSES.includes(status)) {
+      if (b.endedAt !== undefined) endedAt = eventTime(b.endedAt);
+      if (b.endNote !== undefined) endNote = text(b.endNote, '종료 메모', false, 10000);
+      if (!endedAt) throw new HttpError(400, '종료 일시를 입력하세요');
+    }
+    if (endedAt && endedAt < startedAt) throw new HttpError(400, '종료 일시가 시작 일시보다 앞섭니다');
+    db.prepare(
+      'UPDATE cultures SET label=?,vessel=?,notes=?,profile_id=?,started_at=?,passage=?,status=?,ended_at=?,end_note=? WHERE id=?',
+    ).run(
       b.label === undefined ? culture.label : text(b.label, '라벨', true),
       vessel,
       b.notes === undefined ? culture.notes : text(b.notes, '메모', false, 10000),
       b.profileId === undefined ? culture.profile_id : profileFor(culture.cell_line_id, b.profileId),
+      startedAt,
+      passage,
+      status,
+      endedAt,
+      endNote,
       culture.id,
     );
+    if (startedAt !== culture.started_at)
+      db.prepare("UPDATE culture_logs SET at=? WHERE culture_id=? AND type='note' AND json_extract(extra,'$.thawLotId') IS NOT NULL").run(
+        startedAt,
+        culture.id,
+      );
     if (resolved) saveUse(culture.id, resolved);
     else if (b.vesselUse === null) db.prepare('DELETE FROM culture_vessel_use WHERE culture_id=?').run(culture.id);
     return toCultureDto(getCulture(culture.id));
@@ -247,23 +293,44 @@ function upsertLotDetails(
   ).run(lotId, plan, thaw, recovery.status, recovery.observedAt, recovery.note, now());
 }
 
-/** Edit a lot: label/location/notes, manual vial count, representative-thaw plan and explicitly recorded recovery. */
+/**
+ * Edit a lot at any time: label, time, passage, vial counts, per-vial details, plan and recorded recovery.
+ * A frozen lot's time moves its freeze record (and the culture's end, when the freeze ended it) with it.
+ */
 export function updateLot(lotId: string, b: LineageInput) {
   return tx(() => {
     const lot = getLot(lotId);
     const label = b.label === undefined ? lot.label : text(b.label, '라벨', true);
     const location = b.location === undefined ? lot.location : text(b.location, '보관 위치');
     const notes = b.notes === undefined ? lot.notes : text(b.notes, '메모', false, 10000);
-    const vials =
-      b.vialsRemaining === undefined ? lot.vials_remaining : numeric(b.vialsRemaining, '남은 바이알', 0, lot.vials_initial, true);
-    db.prepare('UPDATE cryo_lots SET label=?,location=?,notes=?,vials_remaining=? WHERE id=?').run(label, location, notes, vials, lot.id);
+    const initial = b.vialsInitial === undefined ? lot.vials_initial : numeric(b.vialsInitial, '최초 바이알 수', 1, Number.MAX_SAFE_INTEGER, true);
+    const vials = b.vialsRemaining === undefined ? lot.vials_remaining : numeric(b.vialsRemaining, '남은 바이알', 0, Number.MAX_SAFE_INTEGER, true);
+    if (vials > initial) throw new HttpError(400, `남은 바이알(${vials})이 최초 바이알(${initial})보다 많습니다`);
+    const eventAt = b.eventAt === undefined ? lot.event_at : eventTime(b.eventAt);
+    const passage = b.passage === undefined ? lot.passage : optionalNumber(b.passage, 'Passage', Number.MAX_SAFE_INTEGER, true);
+    const cellsPerVial = b.cellsPerVial === undefined ? lot.cells_per_vial : optionalNumber(b.cellsPerVial, '바이알당 세포 수');
+    const freezingMedium = b.freezingMedium === undefined ? lot.freezing_medium : text(b.freezingMedium, '동결 배지', false, 200) || null;
+    const supplierLot = b.supplierLot === undefined ? lot.supplier_lot : text(b.supplierLot, '공급자 로트') || null;
+    db.prepare(
+      'UPDATE cryo_lots SET label=?,location=?,notes=?,vials_initial=?,vials_remaining=?,event_at=?,passage=?,cells_per_vial=?,freezing_medium=?,supplier_lot=? WHERE id=?',
+    ).run(label, location, notes, initial, vials, eventAt, passage, cellsPerVial, freezingMedium, supplierLot, lot.id);
+    if (eventAt !== lot.event_at) {
+      const freeze = freezeLogOf(lot.id);
+      if (freeze) {
+        db.prepare('UPDATE culture_logs SET at=? WHERE id=?').run(eventAt, freeze.id);
+        db.prepare("UPDATE cultures SET ended_at=? WHERE id=? AND status='frozen' AND ended_at=?").run(eventAt, freeze.culture_id, freeze.at);
+      }
+    }
     const patch: LotDetailsPatch = {};
     if (b.representativeThaw !== undefined)
-      patch.representativeThaw = b.representativeThaw === null ? null : valid(() => validateRepresentativeThaw(b.representativeThaw, lot.vials_initial));
+      patch.representativeThaw = b.representativeThaw === null ? null : valid(() => validateRepresentativeThaw(b.representativeThaw, initial));
     if (b.recovery !== undefined) patch.recovery = b.recovery === null ? null : valid(() => validateRecovery(b.recovery, Date.now()));
     if (patch.representativeThaw !== undefined || patch.recovery !== undefined) upsertLotDetails(lot.id, patch);
     return toLotDto(getLot(lot.id));
   });
+}
+function freezeLogOf(lotId: string): LogRow | undefined {
+  return db.prepare("SELECT * FROM culture_logs WHERE type='freeze' AND json_extract(extra,'$.frozenLotId')=?").get(lotId) as LogRow | undefined;
 }
 
 /* ───────────── Logs ───────────── */
@@ -380,14 +447,39 @@ export function addLog(cultureId: string, b: LineageInput) {
   });
 }
 
-/** Edit an ordinary log. Passage/freeze logs are protected; system-written keys are preserved. */
+/** extra keys the app writes and an edit carries over unchanged (counter values change only through `count`). */
+const SYSTEM_EXTRA_KEYS: readonly string[] = [...PASSAGE_EXTRA_KEYS, ...SEEDING_EXTRA_KEYS, ...LINEAGE_EXTRA_KEYS, ...COUNT_EXTRA_KEYS];
+
+/**
+ * Edit any record. System-written keys are preserved; thaw/passage/freeze records keep their type, and moving their time
+ * moves what they made (thawed culture start, new cultures' start, frozen lot time, the parent's end). A passage record
+ * also takes `dissociationReagent`/`splitRatio`. `count` replaces the counter values. `protocolRun` revises or replaces
+ * the protocol the record followed.
+ */
 export function updateLog(logId: string, b: LineageInput) {
   return tx(() => {
     const row = getLog(logId);
-    if (row.type === 'passage' || row.type === 'freeze') throw new HttpError(400, '계대·동결 기록은 수정할 수 없습니다');
-    if (b.type === 'passage' || b.type === 'freeze') throw new HttpError(400, '계대·동결 기록은 해당 작업으로 추가하세요');
     const stored = toLogDto(row);
-    const system = Object.fromEntries(Object.entries(stored.extra).filter(([k]) => ([...PASSAGE_EXTRA_KEYS, ...SEEDING_EXTRA_KEYS] as string[]).includes(k)));
+    if (b.type !== undefined && b.type !== row.type) {
+      if (stored.operation) throw new HttpError(400, '해동·계대·동결 기록의 종류는 바꿀 수 없습니다');
+      if (b.type === 'passage' || b.type === 'freeze') throw new HttpError(400, '계대·동결 기록은 해당 작업으로 추가하세요');
+    }
+    const system = Object.fromEntries(Object.entries(stored.extra).filter(([k]) => SYSTEM_EXTRA_KEYS.includes(k)));
+    if (row.type === 'passage') {
+      for (const [key, label] of [
+        ['dissociationReagent', '계대 시약'],
+        ['splitRatio', '분주 비율'],
+      ] as const) {
+        if (b[key] === undefined) continue;
+        const value = text(b[key], label, false, 200);
+        if (value) system[key] = value;
+        else delete system[key];
+      }
+    }
+    if (b.count !== undefined) {
+      for (const key of COUNT_EXTRA_KEYS) delete system[key];
+      Object.assign(system, valid(() => validateCountExtras(b.count)));
+    }
     const freeItems = Object.fromEntries(Object.entries(stored.extra).filter(([k]) => !RESERVED_EXTRA_KEYS.includes(k)));
     const legacyFeed = row.type === 'medium_change' && stored.feed?.mode === 'unspecified';
     const storedFeed =
@@ -420,21 +512,174 @@ export function updateLog(logId: string, b: LineageInput) {
       previousExtra: stored.extra,
       preserve: system,
     });
+    if (row.type === 'passage' && system.seededCells && v.total !== null && v.total < Number(system.seededCells))
+      throw new HttpError(400, `회수한 생세포 수가 접종 합계(${Number(system.seededCells).toLocaleString('ko-KR')})보다 적습니다`);
     db.prepare(
       'UPDATE culture_logs SET at=?,type=?,confluency_pct=?,cells_per_ml=?,viability_pct=?,total_cells=?,mycoplasma=?,extra=?,note=? WHERE id=?',
     ).run(v.at, v.type, v.confluency, v.cells, v.viability, v.total, v.mycoplasma, v.extra, v.note, row.id);
+    if (v.at !== row.at) moveOperationTime(row, stored.extra, v.at);
+    editProtocolRun(row.id, row.culture_id, b.protocolRun);
     return toLogDto(getLog(row.id));
   });
 }
+function moveOperationTime(row: LogRow, extra: Record<string, string>, at: string): void {
+  db.prepare('UPDATE culture_plates SET at=? WHERE log_id=?').run(at, row.id);
+  switch (logOperation(row.type, extra)) {
+    case 'thaw':
+      db.prepare('UPDATE cultures SET started_at=? WHERE id=?').run(at, row.culture_id);
+      break;
+    case 'passage':
+      for (const id of childCultureIds(extra)) {
+        db.prepare('UPDATE cultures SET started_at=? WHERE id=?').run(at, id);
+        db.prepare("UPDATE culture_logs SET at=? WHERE culture_id=? AND at=? AND json_extract(extra,'$.seedingParent') IS NOT NULL").run(at, id, row.at);
+      }
+      db.prepare("UPDATE cultures SET ended_at=? WHERE id=? AND status='split' AND ended_at=?").run(at, row.culture_id, row.at);
+      break;
+    case 'freeze':
+      if (extra.frozenLotId) db.prepare('UPDATE cryo_lots SET event_at=? WHERE id=?').run(at, extra.frozenLotId);
+      db.prepare("UPDATE cultures SET ended_at=? WHERE id=? AND status='frozen' AND ended_at=?").run(at, row.culture_id, row.at);
+      break;
+    case 'discard':
+      db.prepare("UPDATE cultures SET ended_at=? WHERE id=? AND status='discarded' AND ended_at=?").run(at, row.culture_id, row.at);
+      break;
+  }
+}
 
-/** Delete an ordinary log; returns the photo files whose rows were cascaded away so the caller can unlink them. */
+/**
+ * Delete a record; returns the photo files whose rows went with it so the caller can unlink them.
+ * Deleting a thaw/passage/freeze record undoes that operation (see removeCulture, undoPassage, undoFreeze).
+ */
 export function removeLog(logId: string): string[] {
   return tx(() => {
     const row = getLog(logId);
-    if (row.type === 'passage' || row.type === 'freeze') throw new HttpError(400, '계대·동결 기록은 삭제할 수 없습니다');
-    const files = (db.prepare('SELECT file_name AS name FROM culture_log_photos WHERE log_id=?').all(row.id) as { name: string }[]).map((r) => r.name);
+    const extra = parseJsonColumn<Record<string, string>>(row.extra, {});
+    switch (logOperation(row.type, extra)) {
+      case 'thaw':
+        return removeCulture(row.culture_id);
+      case 'passage':
+        return undoPassage(row, extra);
+      case 'freeze':
+        return undoFreeze(row, extra);
+      case 'discard': {
+        // The plates' rows go with the record; a culture that ended by discarding its last plate is active again.
+        const files = photoFiles('l.id=?', row.id);
+        db.prepare('DELETE FROM culture_logs WHERE id=?').run(row.id);
+        reopen(row.culture_id, 'discarded', row.at);
+        return files;
+      }
+    }
+    const files = photoFiles('l.id=?', row.id);
     db.prepare('DELETE FROM culture_logs WHERE id=?').run(row.id);
     return files;
+  });
+}
+
+/* ───────────── Undo and delete ───────────── */
+
+/** Stored photo file names of the logs matching `where` (over `culture_logs l`). */
+function photoFiles(where: string, id: string): string[] {
+  return (
+    db.prepare(`SELECT p.file_name AS name FROM culture_log_photos p JOIN culture_logs l ON l.id=p.log_id WHERE ${where}`).all(id) as { name: string }[]
+  ).map((r) => r.name);
+}
+/** Nothing may hang off a culture that is about to disappear: its passages and freezes must be undone first. */
+function assertNoDescendants(culture: CultureRow): void {
+  const labels = (sql: string) => (db.prepare(sql).all(culture.id) as { label: string }[]).map((r) => r.label).join(', ');
+  const children = labels('SELECT label FROM cultures WHERE parent_culture_id=?');
+  if (children)
+    throw new HttpError(409, `${culture.label}에서 계대한 배양(${children})이 있습니다. 그 계대 기록을 먼저 취소하거나 새 배양을 삭제하세요`);
+  const lots = labels('SELECT label FROM cryo_lots WHERE source_culture_id=?');
+  if (lots) throw new HttpError(409, `${culture.label}에서 동결한 stock(${lots})이 있습니다. 그 동결 기록을 먼저 취소하세요`);
+}
+/** A culture whose ending record (passage, freeze, last plate discarded) was undone is active again. */
+function reopen(cultureId: string, status: 'split' | 'frozen' | 'discarded', endedAt: string): void {
+  db.prepare("UPDATE cultures SET status='active',ended_at=NULL WHERE id=? AND status=? AND ended_at=?").run(cultureId, status, endedAt);
+}
+function undoPassage(row: LogRow, extra: Record<string, string>): string[] {
+  const children = childCultureIds(extra)
+    .map((id) => db.prepare('SELECT * FROM cultures WHERE id=?').get(id) as CultureRow | undefined)
+    .filter((c): c is CultureRow => !!c);
+  for (const child of children) assertNoDescendants(child);
+  const files = [...children.flatMap((c) => photoFiles('l.culture_id=?', c.id)), ...photoFiles('l.id=?', row.id)];
+  for (const child of children) db.prepare('DELETE FROM cultures WHERE id=?').run(child.id);
+  db.prepare('DELETE FROM culture_logs WHERE id=?').run(row.id);
+  reopen(row.culture_id, 'split', row.at);
+  return files;
+}
+function undoFreeze(row: LogRow, extra: Record<string, string>): string[] {
+  const lot = extra.frozenLotId ? (db.prepare('SELECT * FROM cryo_lots WHERE id=?').get(extra.frozenLotId) as LotRow | undefined) : undefined;
+  if (lot) {
+    const thawed = (db.prepare('SELECT label FROM cultures WHERE parent_lot_id=?').all(lot.id) as { label: string }[]).map((r) => r.label);
+    if (thawed.length)
+      throw new HttpError(409, `${lot.label}에서 해동한 배양(${thawed.join(', ')})이 있습니다. 그 해동 기록을 먼저 취소하세요`);
+    db.prepare('DELETE FROM cryo_lots WHERE id=?').run(lot.id);
+  }
+  const files = photoFiles('l.id=?', row.id);
+  db.prepare('DELETE FROM culture_logs WHERE id=?').run(row.id);
+  reopen(row.culture_id, 'frozen', row.at);
+  return files;
+}
+
+/**
+ * Delete a culture with its records. Refused while cultures or lots descend from it.
+ * A thawed culture gives its vials back: by default all vials of its thaw once the last culture of that thaw is gone
+ * (`restoreVials` overrides, e.g. when an older record lacks the count). The last new culture of a passage undoes that
+ * passage. Must run inside a transaction; returns photo files to unlink.
+ */
+function removeCulture(cultureId: string, restoreVials?: unknown): string[] {
+  const culture = getCulture(cultureId);
+  assertNoDescendants(culture);
+  const files = photoFiles('l.culture_id=?', culture.id);
+  const lot = culture.parent_lot_id ? (db.prepare('SELECT * FROM cryo_lots WHERE id=?').get(culture.parent_lot_id) as LotRow | undefined) : undefined;
+  if (lot) {
+    const used = lot.vials_initial - lot.vials_remaining;
+    let vials: number;
+    if (restoreVials !== undefined && restoreVials !== null) vials = numeric(restoreVials, '되돌릴 바이알 수', 0, used, true);
+    else {
+      const siblings = db.prepare('SELECT COUNT(*) AS n FROM cultures WHERE parent_lot_id=? AND created_at=? AND id<>?').get(lot.id, culture.created_at, culture.id) as { n: number };
+      const thaw = db.prepare("SELECT extra FROM culture_logs WHERE culture_id=? AND type='note' AND json_extract(extra,'$.thawLotId') IS NOT NULL").get(culture.id) as
+        | { extra: string }
+        | undefined;
+      const recorded = Number(parseJsonColumn<Record<string, string>>(thaw?.extra, {}).thawVials) || 0;
+      vials = siblings.n ? 0 : Math.min(used, recorded);
+    }
+    if (vials) db.prepare('UPDATE cryo_lots SET vials_remaining=vials_remaining+? WHERE id=?').run(vials, lot.id);
+  }
+  if (culture.parent_culture_id) {
+    const passages = db.prepare("SELECT * FROM culture_logs WHERE culture_id=? AND type='passage'").all(culture.parent_culture_id) as unknown as LogRow[];
+    for (const passage of passages) {
+      const extra = parseJsonColumn<Record<string, string>>(passage.extra, {});
+      const ids = childCultureIds(extra);
+      if (!ids.includes(culture.id)) continue;
+      const rest = ids.filter((id) => id !== culture.id);
+      if (rest.length) {
+        db.prepare('UPDATE culture_logs SET extra=? WHERE id=?').run(
+          JSON.stringify({ ...extra, childCultureIds: rest.join(','), childCount: String(rest.length) }),
+          passage.id,
+        );
+      } else {
+        files.push(...photoFiles('l.id=?', passage.id));
+        db.prepare('DELETE FROM culture_logs WHERE id=?').run(passage.id);
+        reopen(culture.parent_culture_id, 'split', passage.at);
+      }
+    }
+  }
+  db.prepare('DELETE FROM cultures WHERE id=?').run(culture.id);
+  return files;
+}
+export function deleteCulture(cultureId: string, restoreVials?: unknown): string[] {
+  return tx(() => removeCulture(cultureId, restoreVials));
+}
+/** Delete a lot nothing was thawed from. A frozen lot undoes its freeze (the culture it ended is active again). */
+export function deleteLot(lotId: string): string[] {
+  return tx(() => {
+    const lot = getLot(lotId);
+    const freeze = freezeLogOf(lot.id);
+    if (freeze) return undoFreeze(freeze, parseJsonColumn<Record<string, string>>(freeze.extra, {}));
+    const thawed = (db.prepare('SELECT label FROM cultures WHERE parent_lot_id=?').all(lot.id) as { label: string }[]).map((r) => r.label);
+    if (thawed.length) throw new HttpError(409, `${lot.label}에서 해동한 배양(${thawed.join(', ')})이 있습니다. 그 해동 기록을 먼저 취소하세요`);
+    db.prepare('DELETE FROM cryo_lots WHERE id=?').run(lot.id);
+    return [];
   });
 }
 
@@ -514,7 +759,11 @@ export function thawLot(lotId: string, b: LineageInput) {
         createdAt,
       );
       const head = `해동 (${lot.label}, ${vials} vial)${targets.length > 1 ? ` · 용기 ${i + 1}/${targets.length}` : ''}`;
-      const log = insertLog(culture.id, { at, type: 'note', note: [head, note].filter(Boolean).join('\n\n') }, { internal: true });
+      const log = insertLog(
+        culture.id,
+        { at, type: 'note', note: [head, note].filter(Boolean).join('\n\n'), extra: { thawLotId: lotId, thawVials: String(vials) } },
+        { internal: true },
+      );
       attachProtocolRun([log.id], culture.id, b.protocolRun);
       return culture;
     });
@@ -540,7 +789,14 @@ export function passageCulture(cultureId: string, b: LineageInput) {
       throw new HttpError(400, '자식 배양은 1–24개여야 합니다');
     const at = eventTime(b.at);
     const keep = flag(b.keepParent, false);
+    const freeze = b.freeze === undefined || b.freeze === null ? null : record(b.freeze, '남은 세포 동결');
+    if (freeze && keep) throw new HttpError(400, '남은 세포는 기존 용기에 두거나 동결하거나 둘 중 하나만 고르세요');
+    const count = valid(() => validateCountExtras(b.count));
     const reagent = text(b.dissociationReagent, '계대 시약', false, 200);
+    // Which of the culture's vessels the cells came from (default: every vessel still in culture).
+    const plates = toCultureDto(parent).plates;
+    const activePlates = plates.filter((p) => p.status === 'active').map((p) => p.no);
+    const sourcePlates = b.sourcePlates === undefined || b.sourcePlates === null ? activePlates : platesFrom(b.sourcePlates, activePlates, plates.length, '계대');
     // The hemocytometer count is of live cells, so recoveredLiveCells is that count × volume and is never multiplied by viability again.
     const recovered = optionalNumber(b.recoveredLiveCells, '회수한 생세포 수');
     const legacyTotal = optionalNumber(b.totalCells, '총 세포 수');
@@ -594,17 +850,69 @@ export function passageCulture(cultureId: string, b: LineageInput) {
       }
       return created;
     });
-    const extra: Record<string, string> = { splitRatio: text(b.splitRatio, '분주 비율'), childCount: String(children.length) };
+    const extra: Record<string, string> = {
+      splitRatio: text(b.splitRatio, '분주 비율'),
+      childCount: String(children.length),
+      childCultureIds: children.map((c) => c.id).join(','),
+      leftoverHandling: freeze ? 'frozen' : keep ? 'kept' : 'discarded',
+      ...count,
+    };
     if (reagent) extra.dissociationReagent = reagent;
     if (seededTotal !== null) extra.seededCells = String(seededTotal);
+    if (plates.length > 1) extra.sourcePlates = sourcePlates.join(',');
+    // Leftover cells frozen in the same step: a freeze record and stock from the parent, before it is marked split.
+    let frozenLot: LotDto | null = null;
+    if (freeze) {
+      const leftover = totalCells === null ? null : totalCells - (seededTotal ?? 0);
+      const planned = numeric(record(freeze.plan, '동결 계획').recoveredLiveCells, '동결할 세포 수');
+      if (leftover !== null && planned > leftover * (1 + 1e-9) + 1e-6)
+        throw new HttpError(400, `동결할 세포 수가 접종하고 남은 세포(${Math.round(leftover).toLocaleString('ko-KR')})보다 많습니다`);
+      frozenLot = freezeWithin(cultureId, { ...freeze, at, endCulture: false }).lot;
+    }
     const passageLog = insertLog(
       cultureId,
       { at, type: 'passage', confluencyPct: b.confluencyPct, cellsPerMl, viabilityPct: b.viabilityPct, totalCells, note: b.note, mycoplasma: null, extra },
       { internal: true },
     );
     attachProtocolRun([passageLog.id], cultureId, b.protocolRun);
-    if (!keep) db.prepare("UPDATE cultures SET status='split',ended_at=? WHERE id=?").run(at, cultureId);
-    return { parent: toCultureDto(getCulture(cultureId)), children, warnings: allWarnings };
+    // Passaged vessels leave the culture; it ends only when no vessel is left (or all cells stay put with keepParent).
+    if (!keep) {
+      const mark = db.prepare("INSERT INTO culture_plates(culture_id,plate_no,status,at,log_id) VALUES(?,?,'passaged',?,?)");
+      if (plates.length > 1) for (const no of sourcePlates) mark.run(cultureId, no, at, passageLog.id);
+      if (activePlates.every((no) => sourcePlates.includes(no))) db.prepare("UPDATE cultures SET status='split',ended_at=? WHERE id=?").run(at, cultureId);
+    }
+    return { parent: toCultureDto(getCulture(cultureId)), children, lot: frozenLot, warnings: allWarnings };
+  });
+}
+
+/** Validated, de-duplicated plate numbers that are all still active. */
+function platesFrom(raw: unknown, active: number[], total: number, action: string): number[] {
+  if (!Array.isArray(raw) || !raw.length) throw new HttpError(400, `${action}할 plate를 하나 이상 고르세요`);
+  const chosen = [...new Set(raw.map((n) => numeric(n, 'plate 번호', 1, total, true)))].sort((a, b) => a - b);
+  const gone = chosen.find((n) => !active.includes(n));
+  if (gone) throw new HttpError(400, `plate ${gone}은(는) 이미 계대했거나 폐기했습니다`);
+  return chosen;
+}
+
+/** Discard some vessels of a culture; discarding the last one ends the culture as discarded. Undo = delete the record. */
+export function discardPlates(cultureId: string, b: LineageInput) {
+  return tx(() => {
+    const culture = getCulture(cultureId);
+    if (culture.status !== 'active') throw new HttpError(409, '종료된 배양입니다');
+    const plates = toCultureDto(culture).plates;
+    const active = plates.filter((p) => p.status === 'active').map((p) => p.no);
+    const chosen = platesFrom(b.plates, active, plates.length, '폐기');
+    const at = eventTime(b.at);
+    const note = text(b.note, '메모', false, 10000);
+    const log = insertLog(
+      cultureId,
+      { at, type: 'note', note: [`plate ${chosen.join(', ')} 폐기`, note].filter(Boolean).join('\n\n'), extra: { discardedPlates: chosen.join(',') } },
+      { internal: true },
+    );
+    const mark = db.prepare("INSERT INTO culture_plates(culture_id,plate_no,status,at,log_id) VALUES(?,?,'discarded',?,?)");
+    for (const no of chosen) mark.run(cultureId, no, at, log.id);
+    if (chosen.length === active.length) db.prepare("UPDATE cultures SET status='discarded',ended_at=? WHERE id=?").run(at, cultureId);
+    return toCultureDto(getCulture(cultureId));
   });
 }
 
@@ -625,70 +933,94 @@ export function freezePreview(raw: unknown): FreezeAllocation {
 }
 
 export function freezeCulture(cultureId: string, b: LineageInput) {
-  return tx(() => {
-    const culture = getCulture(cultureId);
-    if (culture.status !== 'active') throw new HttpError(409, '이미 종료된 배양입니다');
-    const at = eventTime(b.at);
-    const end = flag(b.endCulture, false);
-    const day = at.slice(2, 10).replaceAll('-', '');
-    const vials = numeric(b.vials, '바이알 수', 1, Number.MAX_SAFE_INTEGER, true);
-    let freezePlan: FreezePlanRecord | null = null;
-    let cellsPerVial: unknown = b.cellsPerVial;
-    let thawPlan: RepresentativeThaw | null = null;
-    if (b.plan !== undefined && b.plan !== null) {
-      const raw = record(b.plan, '동결 계획');
-      const inputs = planInputs(raw);
-      const allocation = valid(() => freezeAllocation(inputs));
-      if (inputs.retainedCells > 0 && end)
-        throw new HttpError(400, '남겨 둘 세포가 있으면 배양을 종료할 수 없습니다. 배양을 유지한 채 동결만 기록하세요');
-      if (vials > allocation.possibleVials)
-        throw new HttpError(
-          400,
-          allocation.possibleVials === 0
-            ? `계획한 세포 수로는 바이알을 만들 수 없습니다 (${Math.ceil(allocation.shortfallCells).toLocaleString('ko-KR')}개 부족)`
-            : `계획한 세포 수로는 최대 ${allocation.possibleVials}개 바이알만 만들 수 있습니다 (입력 ${vials}개)`,
-        );
-      if (typeof b.cellsPerVial === 'number' && Math.abs(b.cellsPerVial - inputs.targetCellsPerVial) > 1e-6 * inputs.targetCellsPerVial)
-        throw new HttpError(400, '바이알당 세포 수가 동결 계획의 목표와 다릅니다');
-      cellsPerVial = inputs.targetCellsPerVial;
-      const used = vials * inputs.targetCellsPerVial;
-      freezePlan = {
-        ...allocation,
-        ...inputs,
-        vials,
-        usedCells: used,
-        leftoverCells: Math.max(0, allocation.availableCells - used),
-        resuspendVolumeMl: vials * inputs.volumePerVialMl,
-      };
-      if (raw.representativeThaw !== undefined && raw.representativeThaw !== null)
-        thawPlan = valid(() => validateRepresentativeThaw(raw.representativeThaw, vials));
-    } else if (b.representativeThaw !== undefined && b.representativeThaw !== null) {
-      thawPlan = valid(() => validateRepresentativeThaw(b.representativeThaw, vials));
-    }
-    const lot = insertLot(
-      culture.cell_line_id,
-      { ...b, cellsPerVial },
-      'frozen',
-      cultureId,
-      culture.passage,
-      `${getLineRow(culture.cell_line_id).name}-P${culture.passage}-F${day}`,
+  return tx(() => freezeWithin(cultureId, b));
+}
+/**
+ * Freeze cells of an active culture into a new stock lot. With a plan the vial count is checked against the cells; a
+ * plan with `suspensionCellsPerMl` also stores how each vial is filled (counted suspension + freezing medium). Must run
+ * inside a transaction (a passage may freeze its leftover cells in the same step).
+ */
+function freezeWithin(cultureId: string, b: LineageInput): { lot: LotDto; culture: CultureDto } {
+  const culture = getCulture(cultureId);
+  if (culture.status !== 'active') throw new HttpError(409, '이미 종료된 배양입니다');
+  const at = eventTime(b.at);
+  const end = flag(b.endCulture, false);
+  const day = at.slice(2, 10).replaceAll('-', '');
+  const vials = numeric(b.vials, '바이알 수', 1, Number.MAX_SAFE_INTEGER, true);
+  const count = valid(() => validateCountExtras(b.count));
+  let freezePlan: FreezePlanRecord | null = null;
+  let cellsPerVial: unknown = b.cellsPerVial;
+  let thawPlan: RepresentativeThaw | null = null;
+  if (b.plan !== undefined && b.plan !== null) {
+    const raw = record(b.plan, '동결 계획');
+    const inputs = planInputs(raw);
+    const allocation = valid(() => freezeAllocation(inputs));
+    if (inputs.retainedCells > 0 && end)
+      throw new HttpError(400, '남겨 둘 세포가 있으면 배양을 종료할 수 없습니다. 배양을 유지한 채 동결만 기록하세요');
+    if (vials > allocation.possibleVials)
+      throw new HttpError(
+        400,
+        allocation.possibleVials === 0
+          ? `계획한 세포 수로는 바이알을 만들 수 없습니다 (${Math.ceil(allocation.shortfallCells).toLocaleString('ko-KR')}개 부족)`
+          : `계획한 세포 수로는 최대 ${allocation.possibleVials}개 바이알만 만들 수 있습니다 (입력 ${vials}개)`,
+      );
+    if (typeof b.cellsPerVial === 'number' && Math.abs(b.cellsPerVial - inputs.targetCellsPerVial) > 1e-6 * inputs.targetCellsPerVial)
+      throw new HttpError(400, '바이알당 세포 수가 동결 계획의 목표와 다릅니다');
+    cellsPerVial = inputs.targetCellsPerVial;
+    const used = vials * inputs.targetCellsPerVial;
+    const suspension = optionalNumber(raw.suspensionCellsPerMl, '현탁액 생세포 농도');
+    freezePlan = {
+      ...allocation,
+      ...inputs,
+      vials,
+      usedCells: used,
+      leftoverCells: Math.max(0, allocation.availableCells - used),
+      resuspendVolumeMl: vials * inputs.volumePerVialMl,
+      mix: suspension
+        ? valid(() =>
+            freezeMix({
+              suspensionCellsPerMl: suspension,
+              targetCellsPerVial: inputs.targetCellsPerVial,
+              volumePerVialMl: inputs.volumePerVialMl,
+              vials,
+              freezingMediumDmsoPct: optionalNumber(raw.freezingMediumDmsoPct, '동결 배지 DMSO 농도', 100),
+            }),
+          )
+        : null,
+    };
+    if (raw.representativeThaw !== undefined && raw.representativeThaw !== null)
+      thawPlan = valid(() => validateRepresentativeThaw(raw.representativeThaw, vials));
+  } else if (b.representativeThaw !== undefined && b.representativeThaw !== null) {
+    thawPlan = valid(() => validateRepresentativeThaw(b.representativeThaw, vials));
+  }
+  const lot = insertLot(
+    culture.cell_line_id,
+    { ...b, cellsPerVial },
+    'frozen',
+    cultureId,
+    culture.passage,
+    `${getLineRow(culture.cell_line_id).name}-P${culture.passage}-F${day}`,
+    at,
+  );
+  upsertLotDetails(lot.id, { freezePlan, representativeThaw: thawPlan, recovery: { status: 'unverified', observedAt: null, note: '' } });
+  const note = text(b.note, '메모', false, 10000);
+  const freezeLog = insertLog(
+    cultureId,
+    {
       at,
-    );
-    upsertLotDetails(lot.id, { freezePlan, representativeThaw: thawPlan, recovery: { status: 'unverified', observedAt: null, note: '' } });
-    const note = text(b.note, '메모', false, 10000);
-    const freezeLog = insertLog(
-      cultureId,
-      {
-        at,
-        type: 'freeze',
-        note: [`${lot.vialsInitial} vial 동결 · ${lot.location}`, note].filter(Boolean).join('\n\n'),
-      },
-      { internal: true },
-    );
-    attachProtocolRun([freezeLog.id], cultureId, b.protocolRun);
-    if (end) db.prepare("UPDATE cultures SET status='frozen',ended_at=? WHERE id=?").run(at, cultureId);
-    return { lot: toLotDto(getLot(lot.id)), culture: toCultureDto(getCulture(cultureId)) };
-  });
+      type: 'freeze',
+      confluencyPct: b.confluencyPct,
+      cellsPerMl: b.cellsPerMl,
+      viabilityPct: b.viabilityPct,
+      totalCells: freezePlan?.recoveredLiveCells ?? b.totalCells,
+      note: [`${lot.vialsInitial} vial 동결 · ${lot.location}`, note].filter(Boolean).join('\n\n'),
+      extra: { frozenLotId: lot.id, ...count },
+    },
+    { internal: true },
+  );
+  attachProtocolRun([freezeLog.id], cultureId, b.protocolRun);
+  if (end) db.prepare("UPDATE cultures SET status='frozen',ended_at=? WHERE id=?").run(at, cultureId);
+  return { lot: toLotDto(getLot(lot.id)), culture: toCultureDto(getCulture(cultureId)) };
 }
 export function endCulture(cultureId: string, b: LineageInput) {
   return tx(() => {
@@ -730,4 +1062,34 @@ export function summarizeLogs(rows: LogRow[]): LogSummary {
     }
   }
   return { lastLog: rows[0] ? toLogDtos([rows[0]])[0] : null, lastConfluency, lastFeed, lastAddition };
+}
+
+/** Which record drew each lineage edge and how many protocol steps it changed; ordinary records with changes per culture. */
+export function lineageAnnotations(lineId: string): LineageAnnotations {
+  const rows = db
+    .prepare(
+      'SELECT l.id,l.culture_id,l.type,l.extra,p.steps FROM culture_logs l JOIN cultures c ON c.id=l.culture_id LEFT JOIN culture_log_protocols p ON p.log_id=l.id WHERE c.cell_line_id=?',
+    )
+    .all(lineId) as { id: string; culture_id: string; type: string; extra: string; steps: string | null }[];
+  const out: LineageAnnotations = { operations: {}, changedRecords: {} };
+  for (const row of rows) {
+    const extra = parseJsonColumn<Record<string, string>>(row.extra, {});
+    const op = { logId: row.id, protocolChanges: parseJsonColumn<{ modified: string | null }[]>(row.steps, []).filter((s) => s.modified !== null).length };
+    switch (logOperation(row.type, extra)) {
+      case 'thaw':
+        out.operations[`thaw:${extra.thawLotId}:${row.culture_id}`] = op;
+        break;
+      case 'passage':
+        for (const child of childCultureIds(extra)) out.operations[`passage:${row.culture_id}:${child}`] = { ...op, sourcePlates: plateList(extra.sourcePlates) };
+        break;
+      case 'discard':
+        break;
+      case 'freeze':
+        if (extra.frozenLotId) out.operations[`freeze:${row.culture_id}:${extra.frozenLotId}`] = op;
+        break;
+      default:
+        if (op.protocolChanges) out.changedRecords[row.culture_id] = (out.changedRecords[row.culture_id] ?? 0) + 1;
+    }
+  }
+  return out;
 }

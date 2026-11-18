@@ -9,7 +9,7 @@ import { createApp } from '../src/server/app';
 import { getMediumProduct, getVesselProduct } from '../src/server/lab-products';
 import { mediumRecipe, validateExecutionPlan, type CultureExecutionPlan } from '../src/shared/culture-plan';
 import {
-  assertUsedWells,
+  formatVesselUse,
   REFERENCE_VESSEL_PRODUCTS,
   snapshotMediumProduct,
   validateMediumProductInput,
@@ -41,8 +41,13 @@ describe('vessel reference specs', () => {
     expect(vesselArea({ areaCm2PerWell: null }, 2)).toBeNull();
     expect(() => vesselArea(ref('ref:12-well'), 0)).toThrow();
     expect(() => vesselArea(ref('ref:12-well'), 1.5)).toThrow();
-    expect(() => assertUsedWells({ vesselProductId: 'x', usedWells: 13, mediumMl: null }, ref('ref:12-well'))).toThrow('12');
-    expect(() => assertUsedWells({ vesselProductId: 'x', usedWells: 12, mediumMl: null }, ref('ref:12-well'))).not.toThrow();
+    expect(vesselArea(ref('ref:60 mm dish'), 2)).toBe(42);
+  });
+
+  it('counts dishes as vessels and plates as wells across plates', () => {
+    expect(formatVesselUse(ref('ref:60 mm dish'), 1)).toBe(ref('ref:60 mm dish').label);
+    expect(formatVesselUse(ref('ref:60 mm dish'), 3)).toBe(`${ref('ref:60 mm dish').label} × 3`);
+    expect(formatVesselUse(ref('ref:12-well'), 13)).toBe(`${ref('ref:12-well').label} · 13 well (plate 2개)`);
   });
 });
 
@@ -163,7 +168,7 @@ describe('vessel change calculator', () => {
 
   it('throws on unusable input', () => {
     const t = { product: ref('ref:12-well'), usedWells: 1 };
-    expect(() => calculateVesselChange({ source: null, target: { ...t, usedWells: 13 }, seed: { kind: 'density', densityPerCm2: 1 } })).toThrow();
+    expect(() => calculateVesselChange({ source: null, target: { ...t, usedWells: 0 }, seed: { kind: 'density', densityPerCm2: 1 } })).toThrow();
     expect(() => calculateVesselChange({ source: null, target: { product: vessel({ areaCm2PerWell: null }), usedWells: 1 }, seed: { kind: 'density', densityPerCm2: 1 } })).toThrow('면적');
     expect(() => calculateVesselChange({ source: null, target: t, seed: { kind: 'density', densityPerCm2: 0 } })).toThrow();
     expect(() => calculateVesselChange({ source: null, target: t, seed: { kind: 'cells', cells: Number.NaN } })).toThrow();
