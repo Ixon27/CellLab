@@ -1,9 +1,11 @@
 import * as Plot from '@observablehq/plot';
+import { Info } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { formatCount } from '../../shared/cell-count';
-import type { CultureDto, LotDto } from '../../shared/cell-line';
+import type { CultureDto, LogDto, LotDto } from '../../shared/cell-line';
 import type { CultureVesselUse } from '../../shared/lab-products';
-import { FEED_MODE_LABELS, LEFTOVER_LABELS, PLATE_STATUS_LABELS, RESERVED_EXTRA_KEYS } from '../../shared/culture-operations';
+import { FEED_MODE_LABELS, LEFTOVER_LABELS, PLATE_STATUS_LABELS, RESERVED_EXTRA_KEYS, type PlateStatus } from '../../shared/culture-operations';
+import { splitConditionSnapshot } from '../../shared/culture-plan';
 import { countText } from '../components/CellCounterFields';
 import { VesselUsePicker } from '../components/VesselUsePicker';
 import { PhotoStrip } from './operations/ObservationForm';
@@ -17,6 +19,7 @@ import { PlotFrame } from '../components/PlotFrame';
 import { useToast } from '../components/Toast';
 import { EndCultureDialog, FreezeDialog, LogDialog, PassageDialog, ThawDialog } from './dialogs/CultureDialogs';
 import { DeleteCultureDialog, RecordActions, recordTitle, type LineageWorkspace } from './RecordActions';
+import { formatRecordDate, recordKind, RecordBadge } from './record-display';
 import { sourceCellsPerVial } from './lineage-source';
 
 export const CULTURE_STATUS_LABELS: Record<CultureDto['status'], string> = {
@@ -86,19 +89,7 @@ export function NodeDrawer({
     setEndedAt(culture?.endedAt ? localInput(culture.endedAt) : '');
     setEndNote(culture?.endNote ?? '');
   }, [node, lot, culture]);
-  const chart = useMemo<Plot.PlotOptions>(() => {
-    const points = logs
-      .filter((l) => l.confluencyPct !== null)
-      .map((l) => ({ at: new Date(l.at), value: l.confluencyPct }))
-      .sort((a, b) => +a.at - +b.at);
-    return {
-      height: 140,
-      x: { label: '관찰일' },
-      y: { domain: [0, 100], label: 'Confluency (%)' },
-      marks: [Plot.line(points, { x: 'at', y: 'value' }), Plot.dot(points, { x: 'at', y: 'value', tip: true })],
-    };
-  }, [logs]);
-  const lastConfluency = logs.find((l) => l.confluencyPct !== null);
+  const startedAt = lot?.eventAt ?? culture!.startedAt;
   const manualEnd = culture && (status === 'active' || (MANUAL_END as readonly string[]).includes(status));
   const props = {
     line,
@@ -162,24 +153,74 @@ export function NodeDrawer({
   }
   return (
     <aside aria-label="계보 노드 상세" className="workbench-panel cell-selection">
-      <p className="workbench-eyebrow">{lot ? '선택한 바이알' : '선택한 배양'}</p>
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <h3 className="break-all font-semibold">{node.label}</h3>
+      <header className="cell-sel-head">
+        <div className="min-w-0">
+          <p className="workbench-eyebrow">{lot ? '선택한 바이알' : '선택한 배양'}</p>
+          <h3 className="cell-sel-title">{node.label}</h3>
+        </div>
         <button className={smallBtnCls} onClick={onClose}>
           기본 선택
         </button>
-      </div>
-      <p className="mb-3 text-xs text-fg-muted">
-        P{node.passage ?? '미정'} · {new Date(lot?.eventAt ?? culture!.startedAt).toLocaleString('ko-KR')}{' '}
-        {culture && `· ${CULTURE_STATUS_LABELS[culture.status]}`}
-      </p>
-      {culture && (
-        <p className="mb-3 text-xs text-fg-muted">
-          {culture.vessel} · 최근 confluency{' '}
-          {lastConfluency ? `${lastConfluency.confluencyPct}% · ${new Date(lastConfluency.at).toLocaleString('ko-KR')} (관찰 당시 값)` : '미정'}
-        </p>
+      </header>
+      <ul className="cell-sel-chips" aria-label="배양 요약">
+        {culture && (
+          <li className="cell-chip" data-tone={CULTURE_TONES[culture.status]}>
+            {CULTURE_STATUS_LABELS[culture.status]}
+          </li>
+        )}
+        <li className="cell-chip">P{node.passage ?? '미정'}</li>
+        {culture && <li className="cell-chip">{culture.vessel}</li>}
+      </ul>
+      <dl className="cell-sel-meta">
+        <div>
+          <dt>{lot ? (lot.origin === 'received' ? '입고' : '동결') : '시작'}</dt>
+          <dd title={new Date(startedAt).toLocaleString('ko-KR')}>{formatRecordDate(startedAt)}</dd>
+        </div>
+        {culture?.endNote && (
+          <div>
+            <dt>종료 메모</dt>
+            <dd>{culture.endNote}</dd>
+          </div>
+        )}
+      </dl>
+      {lot ? (
+        <div className="cell-sel-actions" role="group" aria-label="바이알 작업">
+          <button className={smallBtnCls} disabled={lot.vialsRemaining === 0} onClick={() => setDialog('thaw')}>
+            해동
+          </button>
+        </div>
+      ) : culture!.status === 'active' ? (
+        <div className="cell-sel-actions" role="group" aria-label="배양 작업">
+          <button className={smallBtnCls} onClick={() => setDialog('log')}>
+            관찰 기록
+          </button>
+          <button className={smallBtnCls} onClick={() => setDialog('feed')}>
+            배지 교체
+          </button>
+          {(['passage', 'freeze', 'end'] as const).map((kind, i) => (
+            <button key={kind} className={smallBtnCls} onClick={() => setDialog(kind)}>
+              {['계대', '동결', '종료'][i]}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="cell-sel-notice" role="note">
+          <Info aria-hidden size={14} />
+          <p>
+            <strong>종료된 배양</strong>
+            새 작업은 기록할 수 없습니다. 기존 기록과 배양 정보는 언제든 수정할 수 있습니다.
+          </p>
+        </div>
       )}
-      {culture?.endNote && <p className="mb-3 text-xs text-fg-muted">종료 메모: {culture.endNote}</p>}
+      {lot?.vialsRemaining === 0 && (
+        <div className="cell-sel-notice" role="note">
+          <Info aria-hidden size={14} />
+          <p>
+            <strong>남은 바이알 없음</strong>
+            새로 해동할 수 없습니다. 해동한 배양과 해동 기록은 아래에서 수정·취소합니다.
+          </p>
+        </div>
+      )}
       <details className="cell-info-details" open={lot?.vialsRemaining === 0 || undefined}>
         <summary>정보 수정 · 배양 조건 연결</summary>
         <Field label="라벨">
@@ -281,31 +322,10 @@ export function NodeDrawer({
         </div>
       </details>
       {lot && <LotRecoveryPanel key={lot.id} lot={lot} onSaved={onChanged} />}
-      <div className="my-4 flex flex-wrap gap-2">
-        {lot ? (
-          <button className={smallBtnCls} disabled={lot.vialsRemaining === 0} onClick={() => setDialog('thaw')}>
-            해동
-          </button>
-        ) : (
-          <>
-            <button className={smallBtnCls} disabled={culture!.status !== 'active'} onClick={() => setDialog('log')}>
-              관찰 기록
-            </button>
-            <button className={smallBtnCls} disabled={culture!.status !== 'active'} onClick={() => setDialog('feed')}>
-              배지 교체
-            </button>
-            {(['passage', 'freeze', 'end'] as const).map((kind, i) => (
-              <button key={kind} className={smallBtnCls} disabled={culture!.status !== 'active'} onClick={() => setDialog(kind)}>
-                {['계대', '동결', '종료'][i]}
-              </button>
-            ))}
-          </>
-        )}
-      </div>
       {culture && culture.plates.length > 1 && (
-        <div className="mb-3 rounded-lg border border-line p-2 text-xs">
-          <div className="mb-1 flex items-center justify-between gap-2">
-            <span className="font-medium">plate {culture.plates.length}개</span>
+        <section className="cell-sel-plates" aria-label="plate 상태">
+          <div className="cell-sel-plates-head">
+            <span>plate {culture.plates.length}개</span>
             <button
               className={smallDangerBtnCls}
               disabled={culture.status !== 'active' || !culture.plates.some((p) => p.status === 'active')}
@@ -314,105 +334,69 @@ export function NodeDrawer({
               plate 폐기
             </button>
           </div>
-          <p className="text-fg-muted">
-            {culture.plates.map((p) => `${p.no} ${PLATE_STATUS_LABELS[p.status]}`).join(' · ')}
-          </p>
-        </div>
-      )}
-      {culture && culture.status !== 'active' && (
-        <p className="text-xs text-fg-muted">종료된 배양에는 새 작업을 기록할 수 없습니다. 기존 기록과 배양 정보는 언제든 수정할 수 있습니다.</p>
+          <ul className="cell-sel-chips">
+            {culture.plates.map((p) => (
+              <li key={p.no} className="cell-chip" data-tone={PLATE_TONES[p.status]}>
+                {p.no} {PLATE_STATUS_LABELS[p.status]}
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
       {lot && (
-        <>
-          {lot.vialsRemaining === 0 && (
-            <p className="text-xs text-fg-muted">남은 바이알이 없어 새로 해동할 수 없습니다. 해동한 배양과 해동 기록은 아래에서 수정·취소합니다.</p>
-          )}
-          <h4 className="mt-4 text-sm font-medium">이 stock에서 해동한 배양</h4>
-          {thawedFrom.length === 0 && <p className="my-3 text-sm text-fg-muted">아직 해동한 배양이 없습니다.</p>}
-          {thawedFrom.map((c) => {
-            const thawLog = ws.logs.find((l) => l.cultureId === c.id && l.operation === 'thaw');
-            return (
-              <article key={c.id} className="mt-3 rounded-lg border border-line p-3 text-xs">
-                <div className="flex items-center justify-between gap-2">
-                  <button className="cell-text-button font-medium" onClick={() => onSelect(c.id)}>
-                    {c.label} · P{c.passage}
-                  </button>
-                  <span className="text-fg-muted">{CULTURE_STATUS_LABELS[c.status]}</span>
-                </div>
-                <p className="mt-1 text-fg-muted">
-                  {new Date(c.startedAt).toLocaleString('ko-KR')} · {c.vessel}
-                  {thawLog?.thaw?.vials != null && ` · 바이알 ${thawLog.thaw.vials}개`}
-                </p>
-                {thawLog && (
-                  <div className="mt-2">
-                    <RecordActions log={thawLog} ws={ws} onChanged={onChanged} />
-                  </div>
-                )}
-              </article>
-            );
-          })}
-        </>
+        <section className="cell-sel-section">
+          <div className="cell-sel-heading">
+            <h4>이 stock에서 해동한 배양</h4>
+            {thawedFrom.length > 0 && <span>{thawedFrom.length}개</span>}
+          </div>
+          {thawedFrom.length === 0 && <p className="cell-sel-empty">아직 해동한 배양이 없습니다.</p>}
+          <ol className="cell-rec-list">
+            {thawedFrom.map((c) => {
+              const thawLog = ws.logs.find((l) => l.cultureId === c.id && l.operation === 'thaw');
+              return (
+                <li key={c.id}>
+                  <article className="cell-rec" data-kind="thaw">
+                    <header className="cell-rec-head">
+                      <button className="cell-text-button cell-rec-title" onClick={() => onSelect(c.id)}>
+                        {c.label} · P{c.passage}
+                      </button>
+                      <span className="cell-chip" data-tone={CULTURE_TONES[c.status]}>
+                        {CULTURE_STATUS_LABELS[c.status]}
+                      </span>
+                    </header>
+                    <p className="cell-rec-line is-muted" title={new Date(c.startedAt).toLocaleString('ko-KR')}>
+                      {formatRecordDate(c.startedAt)} · {c.vessel}
+                      {thawLog?.thaw?.vials != null && ` · 바이알 ${thawLog.thaw.vials}개`}
+                    </p>
+                    {thawLog && (
+                      <div className="cell-rec-foot">
+                        <RecordActions log={thawLog} ws={ws} onChanged={onChanged} />
+                      </div>
+                    )}
+                  </article>
+                </li>
+              );
+            })}
+          </ol>
+        </section>
       )}
       {culture && (
         <>
-          <h4 className="text-sm font-medium">Confluency 변화</h4>
-          {logs.some((l) => l.confluencyPct !== null) ? (
-            <PlotFrame options={chart} />
-          ) : (
-            <p className="cell-empty">Confluency 관찰값이 없습니다.</p>
-          )}
-          <h4 className="mt-4 text-sm font-medium">기록 목록</h4>
-          {logs.length === 0 && <p className="my-3 text-sm text-fg-muted">아직 기록이 없습니다.</p>}
-          <div className="cell-record-list">
-          {logs.map((l) => (
-            <article key={l.id} className="mt-3 rounded-lg border border-line p-3 text-xs">
-              <div className="font-medium">
-                {recordTitle(l)} · {new Date(l.at).toLocaleString('ko-KR')}
-              </div>
-              <p className="mt-1">
-                {l.confluencyPct !== null && `Confluency ${l.confluencyPct}% · `}
-                {l.cellsPerMl !== null && `${formatCount(l.cellsPerMl)} cells/mL · `}
-                {l.viabilityPct !== null && `생존율 ${l.viabilityPct}% · `}
-                {l.totalCells !== null && `총 ${formatCount(l.totalCells)}개`}
-              </p>
-              {l.mycoplasma && <p>마이코플라스마: {{ negative: '음성', positive: '양성', pending: '검사 중' }[l.mycoplasma]}</p>}
-              {l.feed && (
-                <p className="mt-1">
-                  {FEED_MODE_LABELS[l.feed.mode]} · {l.feed.mediumLabel ?? '배지 미기록'} · 제거 {l.feed.removedMl ?? '미기록'} mL / 추가{' '}
-                  {l.feed.addedMl ?? '미기록'} mL{l.feed.mediumDetail && ` · ${l.feed.mediumDetail}`}
-                </p>
-              )}
-              {l.morphology && <p className="mt-1">형태: {l.morphology}</p>}
-              {l.count && <p className="mt-1">계수기: {countText(l.count)}</p>}
-              {l.passage && (
-                <p className="mt-1">
-                  해리 시약: {l.passage.dissociationReagent ?? '미기록'} · 분주 {l.passage.splitRatio || '미기록'} · 회수 생세포{' '}
-                  {l.passage.recoveredLiveCells === null ? '미기록' : formatCount(l.passage.recoveredLiveCells)} · 접종{' '}
-                  {l.passage.seededCells === null ? '미기록' : formatCount(l.passage.seededCells)} cells
-                  {l.passage.leftoverHandling &&
-                    ` · 남은 세포${l.passage.leftoverCells === null ? '' : ` ${formatCount(l.passage.leftoverCells)}`} ${LEFTOVER_LABELS[l.passage.leftoverHandling]}`}
-                </p>
-              )}
-              <PhotoStrip photos={l.photos ?? []} />
-              {Object.entries(l.extra)
-                .filter(([key]) => !RESERVED_EXTRA_KEYS.includes(key))
-                .map(([k, v]) => (
-                  <p key={k}>
-                    {k}: {v}
-                  </p>
-                ))}
-              <p className="mt-1 whitespace-pre-wrap">{l.note}</p>
-              {l.protocolRun && (
-                <div className="mt-2">
-                  <ProtocolRunView run={l.protocolRun} />
-                </div>
-              )}
-              <div className="mt-2">
-                <RecordActions log={l} ws={ws} onChanged={onChanged} />
-              </div>
-            </article>
-          ))}
-          </div>
+          <ConfluencyTrend logs={logs} />
+          <section className="cell-sel-section">
+            <div className="cell-sel-heading">
+              <h4>기록 목록</h4>
+              {logs.length > 0 && <span>{logs.length}건 · 최신순</span>}
+            </div>
+            {logs.length === 0 && <p className="cell-sel-empty">아직 기록이 없습니다.</p>}
+            <ol className="cell-rec-list is-timeline">
+              {logs.map((l) => (
+                <li key={l.id}>
+                  <RecordCard log={l} ws={ws} onChanged={onChanged} />
+                </li>
+              ))}
+            </ol>
+          </section>
         </>
       )}
       {dialog === 'thaw' && <ThawDialog {...props} />}
@@ -433,6 +417,210 @@ export function NodeDrawer({
         />
       )}
     </aside>
+  );
+}
+
+/** Chip colors follow the lineage graph: green = growing, blue = handed on to a new culture or stock, red = lost. */
+const CULTURE_TONES: Record<CultureDto['status'], 'success' | 'accent' | 'danger'> = {
+  active: 'success',
+  split: 'accent',
+  frozen: 'accent',
+  harvested: 'success',
+  discarded: 'danger',
+  contaminated: 'danger',
+};
+const PLATE_TONES: Record<PlateStatus, 'success' | 'accent' | 'danger'> = { active: 'success', passaged: 'accent', discarded: 'danger' };
+const DAY = 86_400_000;
+const monthDay = (d: Date) => `${d.getMonth() + 1}.${d.getDate()}`;
+const pad2 = (n: number) => String(n).padStart(2, '0');
+
+/** Date ticks (M.D): one per day (thinned to ~5) over several days; the observation times themselves within one or two days. */
+function trendOptions(points: { at: Date; value: number }[]): Plot.PlotOptions {
+  const first = +points[0].at;
+  const last = +points[points.length - 1].at;
+  let x: Plot.ScaleOptions;
+  if (last - first >= 2 * DAY) {
+    const start = new Date(first);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(last);
+    end.setHours(0, 0, 0, 0);
+    end.setDate(end.getDate() + 1);
+    const days: Date[] = [];
+    for (const d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) days.push(new Date(d));
+    const step = Math.ceil(days.length / 5);
+    x = { type: 'utc', domain: [start, end], ticks: days.filter((_, i) => i % step === 0), tickFormat: monthDay };
+  } else {
+    const pad = Math.max((last - first) * 0.25, 3 * 3_600_000);
+    const times = [...new Set(points.map((p) => +p.at))];
+    const ticks = times.length > 3 ? [times[0], times[Math.floor(times.length / 2)], times[times.length - 1]] : times;
+    x = {
+      type: 'utc',
+      domain: [new Date(first - pad), new Date(last + pad)],
+      ticks: ticks.map((t) => new Date(t)),
+      tickFormat: (d: Date) => `${monthDay(d)} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`,
+    };
+  }
+  return {
+    height: 132,
+    marginTop: 12,
+    marginRight: 18,
+    x: { ...x, label: null },
+    y: { domain: [0, 100], ticks: [0, 50, 100], tickFormat: (v: number) => `${v}%`, label: null, grid: true },
+    marks: [
+      Plot.line(points, { x: 'at', y: 'value', stroke: 'var(--pr-accent)', strokeWidth: 1.75 }),
+      Plot.dot(points, {
+        x: 'at',
+        y: 'value',
+        r: 3.5,
+        fill: 'var(--pr-accent)',
+        title: (p) => `${formatRecordDate(p.at.toISOString())}\nConfluency ${p.value}%`,
+        tip: true,
+      }),
+    ],
+  };
+}
+
+/** Confluency over time; with fewer than two observations a line has nothing to show, so the single value is a stat. */
+function ConfluencyTrend({ logs }: { logs: LogDto[] }) {
+  const points = useMemo(
+    () =>
+      logs
+        .filter((l) => l.confluencyPct !== null)
+        .map((l) => ({ at: new Date(l.at), value: l.confluencyPct as number }))
+        .sort((a, b) => +a.at - +b.at),
+    [logs],
+  );
+  const options = useMemo(() => (points.length > 1 ? trendOptions(points) : null), [points]);
+  const latest = points.at(-1);
+  return (
+    <section className="cell-sel-section">
+      <div className="cell-sel-heading">
+        <h4>Confluency 변화</h4>
+        {latest && options && <span>최근 {latest.value}%</span>}
+      </div>
+      {!latest && <p className="cell-sel-empty">Confluency 관찰값이 없습니다.</p>}
+      {latest && options && (
+        <>
+          <PlotFrame options={options} />
+          <p className="cell-sel-hint">관찰 당시 값 · {points.length}회 관찰</p>
+        </>
+      )}
+      {latest && !options && (
+        <div className="cell-stat">
+          <div className="cell-stat-main">
+            <strong>{latest.value}%</strong>
+            <span>{formatRecordDate(latest.at.toISOString())} 관찰</span>
+          </div>
+          <div className="cell-stat-bar" role="img" aria-label={`Confluency ${latest.value}%`}>
+            <i style={{ width: `${Math.min(100, Math.max(0, latest.value))}%` }} />
+          </div>
+          <p className="cell-sel-hint">최근 confluency · 관찰 당시 값 · 2회 이상 관찰하면 추이 그래프가 표시됩니다.</p>
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** One label/value pair of a record; a missing value reads as muted 미기록. */
+function Metric({ label, value, unit }: { label: string; value: string | null; unit?: string }) {
+  return (
+    <div>
+      <dt>{label}</dt>
+      {value === null ? (
+        <dd className="is-empty">미기록</dd>
+      ) : (
+        <dd>
+          {value}
+          {unit && <small>{unit}</small>}
+        </dd>
+      )}
+    </div>
+  );
+}
+
+/** A record as one card: type badge · date · actions, then its measurements as a label/value grid; long text stays folded. */
+function RecordCard({ log: l, ws, onChanged }: { log: LogDto; ws: LineageWorkspace; onChanged(): void }) {
+  const { text: note, snapshot } = splitConditionSnapshot(l.note);
+  const p = l.passage;
+  const title = recordTitle(l);
+  const extras = Object.entries(l.extra).filter(([key]) => !RESERVED_EXTRA_KEYS.includes(key));
+  return (
+    <article className="cell-rec" data-kind={recordKind(l)}>
+      <header className="cell-rec-head">
+        <RecordBadge log={l} />
+        <time dateTime={l.at} title={new Date(l.at).toLocaleString('ko-KR')}>
+          {formatRecordDate(l.at)}
+        </time>
+        <RecordActions log={l} ws={ws} onChanged={onChanged} />
+      </header>
+      <dl className="cell-rec-metrics">
+        {l.confluencyPct !== null && <Metric label="Confluency" value={`${l.confluencyPct}%`} />}
+        {l.cellsPerMl !== null && <Metric label="생세포 농도" value={formatCount(l.cellsPerMl)} unit="cells/mL" />}
+        {l.viabilityPct !== null && <Metric label="생존율" value={`${l.viabilityPct}%`} />}
+        {l.totalCells !== null && <Metric label="총 세포" value={formatCount(l.totalCells)} unit="개" />}
+        {l.mycoplasma && <Metric label="마이코플라스마" value={{ negative: '음성', positive: '양성', pending: '검사 중' }[l.mycoplasma]} />}
+        {p && (
+          <>
+            <Metric label="분주" value={p.splitRatio || null} />
+            <Metric label="회수 생세포" value={p.recoveredLiveCells === null ? null : formatCount(p.recoveredLiveCells)} />
+            <Metric label="접종" value={p.seededCells === null ? null : formatCount(p.seededCells)} unit={p.seededCells === null ? undefined : 'cells'} />
+            {p.leftoverHandling && (
+              <Metric
+                label="남은 세포"
+                value={`${p.leftoverCells === null ? '' : `${formatCount(p.leftoverCells)} `}${LEFTOVER_LABELS[p.leftoverHandling]}`}
+              />
+            )}
+            <Metric label="해리 시약" value={p.dissociationReagent ?? null} />
+          </>
+        )}
+      </dl>
+      {l.feed && (
+        <p className="cell-rec-line">
+          {title !== FEED_MODE_LABELS[l.feed.mode] && <>{FEED_MODE_LABELS[l.feed.mode]} · </>}
+          {l.feed.mediumLabel ?? '배지 미기록'}
+          <span className="is-muted">
+            {' '}
+            · 제거 {l.feed.removedMl ?? '미기록'} mL / 추가 {l.feed.addedMl ?? '미기록'} mL{l.feed.mediumDetail && ` · ${l.feed.mediumDetail}`}
+          </span>
+        </p>
+      )}
+      {l.morphology && (
+        <p className="cell-rec-line">
+          <span className="is-muted">형태</span> {l.morphology}
+        </p>
+      )}
+      <PhotoStrip photos={l.photos ?? []} />
+      {extras.length > 0 && (
+        <dl className="cell-rec-extras">
+          {extras.map(([k, v]) => (
+            <div key={k}>
+              <dt>{k}</dt>
+              <dd>{v}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+      {note && <p className="cell-rec-note">{note}</p>}
+      {l.count && (
+        <details className="cell-rec-fold">
+          <summary>계수기 상세</summary>
+          <ul>
+            {countText(l.count)
+              .split(' · ')
+              .map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+          </ul>
+        </details>
+      )}
+      {snapshot && (
+        <details className="cell-rec-fold">
+          <summary>사용 조건 스냅샷</summary>
+          <p>{snapshot}</p>
+        </details>
+      )}
+      {l.protocolRun && <ProtocolRunView run={l.protocolRun} />}
+    </article>
   );
 }
 

@@ -43,7 +43,7 @@ function StepList({
     <div className="space-y-3">
       {groups.map((group, g) => (
         <section key={g}>
-          {group.section && <h5 className="mb-1 text-[11.5px] font-semibold text-fg-muted">{group.section}</h5>}
+          {group.section && <h5 className="mb-1 text-[12px] font-semibold text-fg-muted">{group.section}</h5>}
           <ol className="space-y-1">
             {group.steps.map((step, n) => (
               <li key={step.index} className="protocol-run-step" data-changed={step.modified !== null || undefined}>
@@ -261,20 +261,5 @@ export function ProtocolRunView({ run }: { run: ProtocolRun }) {
         <StepList steps={run.steps} />
       </div>
     </details>
-  );
-}
-
-/** A record's step changes at a glance (journal rows): original struck through, then what was actually done. */
-export function ProtocolChanges({ run }: { run: ProtocolRun }) {
-  const changed = changedSteps(run);
-  if (!changed.length) return null;
-  return (
-    <ul className="protocol-run-inline" aria-label={`${run.title} 이번 변경`}>
-      {changed.map((step) => (
-        <li key={step.index} title={`${step.original}\n→ ${step.modified || '생략'}`}>
-          <strong>{step.modified ? step.modified.replace(/\s+/g, ' ') : '이번에는 생략'}</strong> ← <s>{step.original.replace(/\s+/g, ' ')}</s>
-        </li>
-      ))}
-    </ul>
   );
 }

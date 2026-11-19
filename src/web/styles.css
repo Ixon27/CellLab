@@ -3,7 +3,7 @@
 @import './workbench.css' layer(components);
 
 /* Semantic experiment/reading status colors, separate from the reference materials. */
-:root {color-scheme:light;--pr-success:#2d8f64;--pr-success-soft:#2d8f641a;--pr-warning:#a97a14;--pr-warning-soft:#a97a141a;--pr-danger:#be5966;--pr-danger-soft:#be59661a;--pr-effort:#a8812f;--pr-effort-max:#ed682c;--pr-scrim:#0c101c29;}
+:root {color-scheme:light;--pr-success:#2d8f64;--pr-success-soft:#2d8f641a;--pr-warning:#8a6410;--pr-warning-soft:#a97a141a;--pr-danger:#be5966;--pr-danger-soft:#be59661a;--pr-effort:#a8812f;--pr-effort-max:#ed682c;--pr-scrim:#0c101c29;}
 :root[data-theme='dark'] {color-scheme:dark;--pr-success:#8fd3a8;--pr-success-soft:#8fd3a81a;--pr-warning:#e0a21a;--pr-warning-soft:#e0a21a1a;--pr-danger:#ec9ca0;--pr-danger-soft:#ec9ca01a;--pr-effort:#d8c090;--pr-effort-max:#ff843f;--pr-scrim:#0c101c60;}
 
 @theme inline {
@@ -75,7 +75,7 @@ body,
 }
 
 .workbench-eyebrow {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.09em;
   line-height: 1.6;

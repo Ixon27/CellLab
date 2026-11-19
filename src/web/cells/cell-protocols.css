@@ -18,7 +18,7 @@
   position: sticky;
   top: 12px;
   padding: 8px;
-  font-size: 12.5px;
+  font-size: 13px;
 }
 .cell-protocols-main {
   min-width: 0;
@@ -36,7 +36,7 @@
   height: 28px;
   padding: 0 4px 0 8px;
   color: var(--pr-fg-muted);
-  font-size: 11.5px;
+  font-size: 12px;
   font-weight: 600;
 }
 .cell-protocols-folder-head span {
@@ -75,7 +75,7 @@
 .cell-protocols-empty {
   padding: 2px 8px 4px 22px;
   color: var(--pr-fg-dim);
-  font-size: 11.5px;
+  font-size: 12px;
 }
 .cell-protocols-title {
   font-size: 17px;
@@ -96,7 +96,7 @@
 }
 .protocol-run-saved {
   padding: 8px 12px;
-  font-size: 12.5px;
+  font-size: 13px;
 }
 .protocol-run-saved > summary {
   display: flex;
@@ -139,7 +139,7 @@
   font-variant-numeric: tabular-nums;
 }
 .protocol-run-text {
-  font-size: 12.5px;
+  font-size: 13px;
   line-height: 1.55;
 }
 .protocol-run-text p {
@@ -153,34 +153,13 @@
 .protocol-run-change {
   margin-top: 3px;
   white-space: pre-wrap;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--pr-fg);
 }
 .protocol-run-change::before {
   content: '→ ';
   color: var(--pr-warning);
-}
-.protocol-run-inline {
-  margin: 4px 0 0;
-  padding: 0;
-  list-style: none;
-  font-size: 11px;
-  line-height: 1.5;
-}
-.protocol-run-inline li {
-  overflow-wrap: anywhere;
-}
-.protocol-run-inline li::before {
-  content: 'SOP ';
-  color: var(--pr-warning);
-  font-weight: 600;
-}
-.protocol-run-inline s {
-  color: var(--pr-fg-dim);
-}
-.protocol-run-inline strong {
-  font-weight: 600;
 }
 .protocol-run-actions {
   flex: none;

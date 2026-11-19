@@ -1,3 +1,4 @@
+/* Type scale for the cell workspace: 11 caption · 12 small · 13 body · 15 title · 20 display. No other sizes. */
 .ghost-shell .app-header {
   height: 46px;
   padding: 0;
@@ -91,7 +92,7 @@ html[data-desktop='darwin'] .cell-titlebar-tools {
   box-shadow: inset 0 0 0 1px var(--pr-line);
 }
 .cell-shell-sidebar .workbench-eyebrow {
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 500;
   letter-spacing: 0.06em;
 }
@@ -111,8 +112,8 @@ html[data-desktop='darwin'] .cell-titlebar-tools {
 .cell-project-row > .workbench-nav {
   flex: 1;
   min-width: 0;
-  font-size: 13.5px;
-  font-weight: 560;
+  font-size: 13px;
+  font-weight: 500;
 }
 .cell-project-disclosure {
   position: absolute;
@@ -185,7 +186,7 @@ html[data-desktop='darwin'] .cell-titlebar-tools {
   text-align: right;
 }
 .cell-overview-stats strong {
-  font-size: 18px;
+  font-size: 20px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
@@ -193,6 +194,9 @@ html[data-desktop='darwin'] .cell-titlebar-tools {
   font-size: 11px;
   color: var(--pr-fg-muted);
   white-space: nowrap;
+}
+.cell-overview-stats .is-warning :is(strong, span) {
+  color: var(--pr-warning);
 }
 .cell-detail-tabs {
   display: flex;
@@ -225,15 +229,30 @@ html[data-desktop='darwin'] .cell-titlebar-tools {
 }
 .cell-workspace-columns {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 300px;
+  grid-template-columns: minmax(0, 1fr) clamp(300px, 24vw, 360px);
   align-items: start;
   gap: 16px;
+}
+/* Three weights only (400/500/600): browser-default bold would add a fourth. */
+:is(.cell-workspace, .cell-detail-page) :is(strong, b) {
+  font-weight: 600;
 }
 .cell-workspace-main,
 .cell-workspace-side {
   display: grid;
   gap: 14px;
   min-width: 0;
+}
+/* The side column follows the journal as it scrolls; it scrolls on its own when taller than the window. */
+.cell-workspace-side {
+  position: sticky;
+  top: 16px;
+  max-height: calc(100vh - 46px - 32px);
+  margin: -4px;
+  padding: 4px;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
 }
 .cell-panel-heading {
   min-height: 44px;
@@ -286,7 +305,7 @@ html[data-desktop='darwin'] .cell-titlebar-tools {
 }
 .cell-graph .react-flow__edge-text {
   fill: var(--pr-fg-muted);
-  font-size: 10px;
+  font-size: 11px;
 }
 .cell-graph .react-flow__edge-textbg {
   fill: var(--pr-surface);
@@ -318,7 +337,7 @@ html[data-desktop='darwin'] .cell-titlebar-tools {
   border-radius: 999px;
   background: var(--pr-sunken);
   color: var(--pr-fg-muted);
-  font-size: 10px;
+  font-size: 11px;
   white-space: nowrap;
 }
 .cell-node-sop + .cell-node-toggle {
@@ -343,7 +362,7 @@ html[data-desktop='darwin'] .cell-titlebar-tools {
 }
 .cell-graph-plate span {
   color: var(--pr-fg-muted);
-  font-size: 10px;
+  font-size: 11px;
 }
 .cell-graph-plate.status-passaged span {
   color: var(--pr-accent);
@@ -365,7 +384,7 @@ html[data-desktop='darwin'] .cell-titlebar-tools {
 }
 .cell-graph-node strong {
   display: block;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   margin: 5px 0 3px;
   white-space: nowrap;
@@ -373,7 +392,7 @@ html[data-desktop='darwin'] .cell-titlebar-tools {
   text-overflow: ellipsis;
 }
 .cell-graph-node p {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--pr-fg-muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -383,7 +402,7 @@ html[data-desktop='darwin'] .cell-titlebar-tools {
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: 10px;
+  font-size: 11px;
   color: var(--pr-fg-muted);
 }
 .cell-node-sop {
@@ -431,20 +450,23 @@ html[data-desktop='darwin'] .cell-titlebar-tools {
   width: 100%;
   border-collapse: collapse;
   text-align: left;
-  font-size: 11px;
+  font-size: 12px;
 }
 .cell-workspace-table th {
   color: var(--pr-fg-muted);
-  font-weight: 500;
-  font-size: 10px;
+  font-weight: 600;
+  font-size: 11px;
   white-space: nowrap;
   background: var(--pr-sunken);
 }
-.cell-workspace-table th,
-.cell-workspace-table td {
-  padding: 7px 11px;
+.cell-workspace-table th {
+  padding: 8px 10px;
+  height: 34px;
   border-bottom: 1px solid var(--pr-line);
-  height: 33px;
+}
+.cell-workspace-table td {
+  padding: 11px 10px;
+  border-bottom: 1px solid var(--pr-line);
 }
 .cell-workspace-table tbody tr:last-child td {
   border-bottom: 0;
@@ -452,11 +474,27 @@ html[data-desktop='darwin'] .cell-titlebar-tools {
 .cell-workspace-table tr.is-selected {
   background: var(--pr-sunken);
 }
-.cell-workspace-table tr:hover {
-  background: var(--pr-sunken);
+.cell-workspace-table tr.is-selected td:first-child {
+  box-shadow: inset 2px 0 0 var(--pr-accent);
+}
+.cell-workspace-table tbody tr:hover {
+  background: var(--pr-hover);
 }
 .cell-workspace-table td {
   font-variant-numeric: tabular-nums;
+}
+.cell-workspace-table :is(th, td).is-num {
+  text-align: right;
+}
+.cell-workspace-table :is(th, td).is-actions {
+  text-align: right;
+}
+.cell-workspace-table .is-actions .cell-row-actions {
+  justify-content: flex-end;
+}
+.cell-workspace-table .is-empty {
+  color: var(--pr-fg-dim);
+  font-weight: 400;
 }
 .cell-text-button {
   text-align: left;
@@ -470,11 +508,43 @@ html[data-desktop='darwin'] .cell-titlebar-tools {
   display: flex;
   gap: 4px;
   white-space: nowrap;
+  transition: opacity 120ms ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .cell-row-actions {
+    transition: none;
+  }
 }
 .cell-row-actions button {
   padding: 3px 6px;
-  font-size: 10px;
+  font-size: 12px;
   min-height: 24px;
+}
+/* Undo buttons stay neutral until pointed at: nine red outlines in one table read as nine alarms. */
+.cell-row-actions button.text-danger:not(:hover, :focus-visible) {
+  color: var(--pr-fg-muted);
+  border-color: var(--pr-line);
+}
+/* Row actions appear on the row being pointed at, focused or selected (keyboard focus reveals them too). */
+@media (hover: hover) and (pointer: fine) {
+  .cell-workspace-table tbody tr:not(:hover, :focus-within, .is-selected) .cell-row-actions {
+    opacity: 0;
+  }
+}
+.cell-journal-table .cell-day-row th {
+  padding: 14px 10px 6px;
+  height: auto;
+  background: transparent;
+  color: var(--pr-fg);
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.cell-journal-table tbody tr.cell-day-row:hover {
+  background: transparent;
+}
+.cell-journal-table tbody tr:first-child.cell-day-row th {
+  padding-top: 10px;
 }
 /* Journal rows grow with multi-line notes: cells align to the top, the short columns stay on one line. */
 .cell-journal-table td {
@@ -484,19 +554,66 @@ html[data-desktop='darwin'] .cell-titlebar-tools {
 .cell-journal-table td:not(.cell-log-note) {
   white-space: nowrap;
 }
+.cell-journal-table td.cell-log-culture {
+  min-width: 130px;
+}
+.cell-log-culture .cell-text-button {
+  display: block;
+  margin-bottom: 3px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.cell-log-date time {
+  color: var(--pr-fg-muted);
+  font-variant-numeric: tabular-nums;
+}
+.cell-stock-table .cell-log-date strong {
+  font-weight: 500;
+}
+.cell-log-date span {
+  color: var(--pr-fg-muted);
+}
+.cell-stock-label {
+  font-weight: 500;
+}
 .cell-log-note {
   width: 100%;
-  min-width: 240px;
+  min-width: 200px;
 }
 .cell-log-note-text {
+  font-size: 12px;
+  line-height: 1.55;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 .cell-log-facts {
   color: var(--pr-fg-muted);
-  font-size: 10px;
+  font-size: 11px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+.cell-log-facts span + span::before {
+  content: '·';
+  margin: 0 6px;
+  opacity: 0.6;
+}
+.cell-log-facts + .cell-log-note-text {
+  margin-top: 3px;
+}
+.cell-log-sop {
+  margin-top: 3px;
+  color: var(--pr-fg-muted);
+  font-size: 11px;
+}
+.cell-log-sop::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--pr-warning);
+  vertical-align: 1px;
 }
 .cell-counter {
   padding: 10px 12px;
@@ -531,17 +648,17 @@ html[data-desktop='darwin'] .cell-titlebar-tools {
 .cell-counter-grid label span {
   display: block;
   margin-bottom: 3px;
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--pr-fg-muted);
 }
 .cell-counter-note {
   margin-top: 8px;
-  font-size: 11.5px;
+  font-size: 12px;
   color: var(--pr-fg-muted);
 }
 .cell-counter-result {
   margin-top: 4px;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 500;
 }
 .cell-log-filters {
@@ -551,7 +668,7 @@ html[data-desktop='darwin'] .cell-titlebar-tools {
 }
 .cell-log-filters select {
   max-width: 210px;
-  font-size: 11px;
+  font-size: 12px;
 }
 .cell-quick,
 .cell-selection {
@@ -560,6 +677,18 @@ html[data-desktop='darwin'] .cell-titlebar-tools {
 }
 .cell-quick h3 {
   margin-bottom: 14px;
+}
+.cell-quick-picks {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+.cell-quick-picks > span {
+  width: 100%;
+  font-size: 12px;
+  color: var(--pr-fg-muted);
 }
 .cell-quick input,
 .cell-quick select,
@@ -590,26 +719,411 @@ html[data-desktop='darwin'] .cell-titlebar-tools {
   margin: 7px 0;
 }
 .cell-info-details {
-  padding: 9px 0;
+  margin-top: 14px;
   border-top: 1px solid var(--pr-line);
   border-bottom: 1px solid var(--pr-line);
 }
 .cell-info-details summary {
   cursor: pointer;
+  padding: 9px 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--pr-fg-muted);
+}
+.cell-info-details[open] {
+  padding-bottom: 12px;
+}
+.cell-info-details[open] summary {
+  margin-bottom: 6px;
+}
+/* Selected culture / vial panel: header, actions, then sections of facts. The panel grows with its form so the save/delete buttons are never clipped. */
+.cell-selection {
+  padding: 16px;
+}
+.cell-sel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.cell-selection .cell-sel-title {
+  margin-top: 2px;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.cell-sel-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.cell-sel-chips .cell-chip {
+  white-space: normal;
+  max-width: 100%;
+}
+.cell-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--pr-sunken);
+  color: var(--pr-fg-muted);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+.cell-chip[data-tone='success'] {
+  --tone: var(--pr-success);
+}
+.cell-chip[data-tone='accent'] {
+  --tone: var(--pr-accent);
+}
+.cell-chip[data-tone='danger'] {
+  --tone: var(--pr-danger);
+}
+.cell-chip[data-tone] {
+  background: color-mix(in srgb, var(--tone) 14%, transparent);
+  color: color-mix(in srgb, var(--tone) 80%, var(--pr-fg));
+}
+.cell-sel-meta {
+  display: grid;
+  gap: 4px;
+  margin-top: 10px;
+  font-size: 12px;
+}
+.cell-sel-meta > div {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 8px;
+}
+.cell-sel-meta dt {
+  color: var(--pr-fg-muted);
+}
+.cell-sel-meta dd {
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.cell-sel-actions {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 14px;
+}
+.cell-sel-actions button {
+  grid-column: span 2;
+  height: 30px;
+  font-size: 12px;
+  font-weight: 500;
+}
+.cell-sel-actions button:nth-child(-n + 2),
+.cell-sel-actions button:only-child {
+  grid-column: span 3;
+}
+.cell-sel-actions button:only-child {
+  grid-column: 1 / -1;
+}
+.cell-sel-notice {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+  color: var(--pr-fg-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.cell-sel-notice svg {
+  flex: none;
+  margin-top: 3px;
+}
+.cell-sel-notice strong {
+  display: block;
+  color: var(--pr-fg);
+  font-weight: 600;
+}
+.cell-sel-plates {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--pr-line);
+}
+.cell-sel-plates-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.cell-sel-plates .cell-sel-chips {
+  margin-top: 8px;
+}
+.cell-sel-section {
+  margin-top: 22px;
+}
+.cell-sel-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.cell-selection .cell-sel-heading h4 {
+  font-size: 13px;
+  font-weight: 600;
+}
+.cell-sel-heading span {
+  font-size: 11px;
+  color: var(--pr-fg-muted);
+  font-variant-numeric: tabular-nums;
+}
+.cell-sel-empty {
   font-size: 12px;
   color: var(--pr-fg-muted);
 }
-.cell-info-details[open] summary {
-  margin-bottom: 12px;
+.cell-sel-hint {
+  margin-top: 6px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--pr-fg-dim);
 }
-.cell-selection article {
-  border-radius: 5px;
-  padding: 9px;
+.cell-stat {
+  padding: 2px 0;
 }
-/* The panel grows with its form so the save/delete buttons are never clipped; only a long record list scrolls. */
-.cell-record-list {
-  max-height: 560px;
-  overflow-y: auto;
+.cell-stat-main {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.cell-stat-main strong {
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.cell-stat-main span {
+  font-size: 12px;
+  color: var(--pr-fg-muted);
+  font-variant-numeric: tabular-nums;
+}
+.cell-stat-bar {
+  height: 6px;
+  margin-top: 10px;
+  border-radius: 999px;
+  background: var(--pr-line-strong);
+  overflow: hidden;
+}
+.cell-stat-bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--pr-accent);
+}
+/* Record cards: one per record on a thin timeline rule; only a long list scrolls. */
+.cell-rec-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.cell-rec-list.is-timeline {
+  padding-left: 18px;
+}
+.cell-rec-list.is-timeline > li {
+  position: relative;
+}
+.cell-rec-list.is-timeline > li::before {
+  content: '';
+  position: absolute;
+  left: -14px;
+  top: 18px;
+  bottom: -10px;
+  width: 1px;
+  background: var(--pr-line-strong);
+}
+.cell-rec-list.is-timeline > li:last-child::before {
+  display: none;
+}
+.cell-rec,
+.cell-rec-badge {
+  --tone: var(--pr-fg-dim);
+}
+:is(.cell-rec, .cell-rec-badge)[data-kind='observation'] {
+  --tone: var(--pr-success);
+}
+:is(.cell-rec, .cell-rec-badge)[data-kind='feed'] {
+  --tone: var(--pr-warning);
+}
+:is(.cell-rec, .cell-rec-badge)[data-kind='passage'] {
+  --tone: var(--pr-accent);
+}
+:is(.cell-rec, .cell-rec-badge)[data-kind='freeze'] {
+  --tone: #3a9bb8;
+}
+:is(.cell-rec, .cell-rec-badge)[data-kind='thaw'] {
+  --tone: #8a63d2;
+}
+:is(.cell-rec, .cell-rec-badge)[data-kind='discard'],
+:is(.cell-rec, .cell-rec-badge)[data-kind='harvest'] {
+  --tone: var(--pr-danger);
+}
+/* Record kind: a 6px colored dot beside plain text. The dot colors match the timeline dots in the record list. */
+.cell-rec-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--pr-fg);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.cell-rec-badge::before {
+  content: '';
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--tone);
+}
+/* On the timeline the rail dot already carries the kind; the badge keeps its text only. */
+.is-timeline .cell-rec-badge::before {
+  display: none;
+}
+.cell-rec {
+  position: relative;
+  padding: 10px 12px 12px;
+  border-radius: 10px;
+  background: var(--pr-surface);
+  box-shadow: inset 0 0 0 1px var(--pr-line);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.is-timeline .cell-rec::before {
+  content: '';
+  position: absolute;
+  left: -18px;
+  top: 14px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--tone);
+}
+.cell-rec-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+}
+.cell-rec-head time {
+  font-size: 12px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.cell-rec-head .cell-row-actions {
+  margin-left: auto;
+}
+.cell-rec-head .cell-chip {
+  margin-left: auto;
+}
+.cell-rec-title {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.cell-rec-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 12px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--pr-line);
+}
+.cell-rec-metrics:empty {
+  display: none;
+}
+.cell-rec-metrics dt,
+.cell-rec-extras dt {
+  font-size: 11px;
+  color: var(--pr-fg-muted);
+}
+.cell-rec-metrics dd {
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.cell-rec-metrics dd small {
+  margin-left: 3px;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--pr-fg-muted);
+}
+.cell-rec-metrics dd.is-empty {
+  font-weight: 400;
+  color: var(--pr-fg-dim);
+}
+.cell-rec-line {
+  margin-top: 8px;
+  overflow-wrap: anywhere;
+}
+.cell-rec .is-muted {
+  color: var(--pr-fg-muted);
+}
+.cell-rec-extras {
+  display: grid;
+  gap: 2px;
+  margin-top: 8px;
+}
+.cell-rec-extras > div {
+  display: flex;
+  gap: 8px;
+}
+.cell-rec-note {
+  margin-top: 10px;
+  padding: 2px 0 2px 10px;
+  border-left: 2px solid var(--pr-line-strong);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.cell-rec-fold {
+  margin-top: 8px;
+  font-size: 12px;
+}
+.cell-rec-fold > summary {
+  cursor: pointer;
+  color: var(--pr-fg-muted);
+}
+.cell-rec-fold ul {
+  display: grid;
+  gap: 3px;
+  margin: 6px 0 0;
+  padding-left: 14px;
+  list-style: disc;
+  color: var(--pr-fg-muted);
+  font-variant-numeric: tabular-nums;
+}
+.cell-rec-fold p {
+  margin-top: 6px;
+  color: var(--pr-fg-muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.cell-rec .protocol-run-saved {
+  margin-top: 8px;
+  padding: 6px 0 0;
+  border-top: 1px solid var(--pr-line);
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  font-size: 12px;
+}
+.cell-rec-foot {
+  margin-top: 8px;
 }
 .cell-info-actions {
   display: flex;
@@ -626,9 +1140,25 @@ html[data-desktop='darwin'] .cell-titlebar-tools {
   .cell-workspace-columns {
     grid-template-columns: minmax(0, 1fr);
   }
+  /* One column: the selection sits right under the graph that picks it, the journal follows. */
+  .cell-workspace-main {
+    display: contents;
+  }
+  .cell-ws-graph {
+    order: 1;
+  }
   .cell-workspace-side {
+    order: 2;
+    position: static;
+    max-height: none;
+    margin: 0;
+    padding: 0;
+    overflow: visible;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     align-items: start;
+  }
+  .cell-ws-journal {
+    order: 3;
   }
   .cell-detail-page {
     padding: 18px;

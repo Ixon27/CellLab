@@ -2,8 +2,8 @@ import dagre from '@dagrejs/dagre';
 import { Controls, Handle, Position, ReactFlow, ReactFlowProvider, useReactFlow } from '@xyflow/react';
 import type { Edge, Node, NodeProps } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { FlaskConical, TestTube } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { FlaskConical, Plus, TestTube } from 'lucide-react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CellLineDetailDto, CellLineDto, CellLineLogDto, LogDto, LotDto } from '../../shared/cell-line';
 import { splitConditionSnapshot } from '../../shared/culture-plan';
 import type { LineageGraph, LineageNode } from '../../shared/lineage';
@@ -14,9 +14,10 @@ import { inputCls, smallBtnCls } from '../components/Dialog';
 import { useResolvedTheme } from '../state/theme';
 import { CULTURE_STATUS_LABELS, NodeDrawer } from './NodeDrawer';
 import { ReceiveCultureDialog, ReceiveLotDialog, ThawDialog } from './dialogs/CultureDialogs';
-import { ProtocolChanges } from './ProtocolRun';
+import { changedSteps } from '../../shared/protocol-run';
 import { QuickRecord } from './QuickRecord';
-import { logLabels, OperationLogDialog, RecordActions, recordTitle, type LineageWorkspace } from './RecordActions';
+import { logLabels, OperationLogDialog, RecordActions, type LineageWorkspace } from './RecordActions';
+import { recordDateParts, RecordBadge } from './record-display';
 import './lineage-workspace.css';
 
 type StockNode = Node<{ work: LineageNode; detail: string; plates: number; expanded: boolean; onToggle(): void }, 'lineage'>;
@@ -25,6 +26,8 @@ type FlowNode = StockNode | PlateNode;
 /** An edge carries the record of the operation that drew it, so clicking it opens that record. */
 type FlowEdge = Edge<{ logId: string | null }>;
 const NODE_SIZE = { lineage: { width: 180, height: 82 }, plate: { width: 128, height: 40 } } as const;
+/** Fitting never shrinks nodes below this, so their text stays readable; a wider graph pans instead. */
+const MIN_FIT_ZOOM = 0.8;
 function StockCard({ data, selected }: NodeProps<StockNode>) {
   const n = data.work;
   return (
@@ -77,6 +80,7 @@ const nodeTypes = { lineage: StockCard, plate: PlateCard };
  */
 function JournalNote({ log }: { log: LogDto }) {
   const { text, snapshot } = splitConditionSnapshot(log.note);
+  const sopChanges = log.protocolRun ? changedSteps(log.protocolRun) : [];
   const facts = [
     log.extra['수행자'],
     log.feed && `${log.feed.mediumLabel ?? '배지 미기록'} · 제거 ${log.feed.removedMl ?? '?'} / 추가 ${log.feed.addedMl ?? '?'} mL`,
@@ -90,10 +94,20 @@ function JournalNote({ log }: { log: LogDto }) {
   ].filter(Boolean);
   return (
     <>
-      {facts.length > 0 && <div className="cell-log-facts">{facts.join(' · ')}</div>}
+      {facts.length > 0 && (
+        <div className="cell-log-facts">
+          {facts.map((fact, i) => (
+            <span key={i}>{fact}</span>
+          ))}
+        </div>
+      )}
       {(text || !facts.length) && <div className="cell-log-note-text">{text || '—'}</div>}
       {snapshot && <div className="cell-log-facts">사용 조건 스냅샷 기록됨 · 선택한 배양의 기록 목록에서 보기</div>}
-      {log.protocolRun && <ProtocolChanges run={log.protocolRun} />}
+      {sopChanges.length > 0 && (
+        <div className="cell-log-sop" title={sopChanges.map((s) => `${s.original}\n→ ${s.modified || '생략'}`).join('\n\n')}>
+          SOP 변경 {sopChanges.length}단계
+        </div>
+      )}
     </>
   );
 }
@@ -112,7 +126,13 @@ export function LineageView(props: Props) {
   );
 }
 function LineageInner({ line, focusNodeId, onSelectNode, onChanged, externalRevision = 0 }: Props) {
-  const { fitView } = useReactFlow();
+  const { fitView, getViewport, setViewport, getNodesBounds, getNodes } = useReactFlow();
+  /** Fit the graph; when it is too wide to fit at a readable zoom, start from its left end (the stock it grew from). */
+  const fitGraph = useCallback(async () => {
+    await fitView({ padding: 0.18, maxZoom: 1, minZoom: MIN_FIT_ZOOM });
+    const { zoom, y } = getViewport();
+    if (zoom <= MIN_FIT_ZOOM + 1e-3) void setViewport({ x: 24 - getNodesBounds(getNodes()).x * zoom, y, zoom });
+  }, [fitView, getViewport, setViewport, getNodesBounds, getNodes]);
   const theme = useResolvedTheme();
   const container = useRef<HTMLDivElement>(null);
   const [graph, setGraph] = useState<LineageGraph>({ nodes: [], edges: [] });
@@ -269,7 +289,7 @@ function LineageInner({ line, focusNodeId, onSelectNode, onChanged, externalRevi
     let timer: number | undefined;
     const fit = () => {
       window.clearTimeout(timer);
-      timer = window.setTimeout(() => void fitView({ padding: 0.18, maxZoom: 1 }), 60);
+      timer = window.setTimeout(() => void fitGraph(), 60);
     };
     const observer = new ResizeObserver(fit);
     observer.observe(container.current);
@@ -278,7 +298,7 @@ function LineageInner({ line, focusNodeId, onSelectNode, onChanged, externalRevi
       observer.disconnect();
       window.clearTimeout(timer);
     };
-  }, [topology, fitView]);
+  }, [topology, fitGraph]);
   const changed = () => {
     void load();
     onChanged();
@@ -311,13 +331,13 @@ function LineageInner({ line, focusNodeId, onSelectNode, onChanged, externalRevi
       {loading && <p className="cell-empty">계보·기록을 불러오는 중…</p>}
       <div className="cell-workspace-columns">
         <div className="cell-workspace-main">
-          <section className="workbench-panel">
+          <section className="workbench-panel cell-ws-graph">
             <div className="cell-panel-heading">
               <h3>배양 계보</h3>
               <label>
                 <input type="checkbox" checked={hideEnded} onChange={(e) => setHideEnded(e.target.checked)} /> 종료된 배양 숨기기
               </label>
-              <button className={smallBtnCls} onClick={() => void fitView({ padding: 0.18, maxZoom: 1 })}>
+              <button className={smallBtnCls} onClick={() => void fitGraph()}>
                 전체 보기
               </button>
               {multiPlate.size > 0 && (
@@ -331,10 +351,10 @@ function LineageInner({ line, focusNodeId, onSelectNode, onChanged, externalRevi
                 </>
               )}
               <button className={smallBtnCls} onClick={() => setDialog('lot')}>
-                + stock 입고
+                <Plus size={13} aria-hidden /> stock 입고
               </button>
               <button className={smallBtnCls} onClick={() => setDialog('culture')}>
-                + 배양 상태로 입고
+                <Plus size={13} aria-hidden /> 배양 상태로 입고
               </button>
             </div>
             <div ref={container} className="cell-graph">
@@ -357,7 +377,7 @@ function LineageInner({ line, focusNodeId, onSelectNode, onChanged, externalRevi
               </ReactFlow>
             </div>
           </section>
-          <section className="workbench-panel">
+          <section className="workbench-panel cell-ws-journal">
             <div className="cell-panel-heading">
               <h3>날짜별 기록</h3>
               <span>최신순 · {daily.length}건</span>
@@ -384,35 +404,51 @@ function LineageInner({ line, focusNodeId, onSelectNode, onChanged, externalRevi
               <table className="cell-workspace-table cell-journal-table">
                 <thead>
                   <tr>
-                    <th>일시</th>
+                    <th>시각</th>
                     <th>배양 · P</th>
-                    <th>Confluency</th>
+                    <th className="is-num">Confluency</th>
                     <th>기록</th>
                     <th>수행자 / 메모</th>
-                    <th>작업</th>
+                    <th className="is-actions">작업</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {daily.map((l) => (
-                    <tr key={l.id} className={selected === l.cultureId ? 'is-selected' : ''} onClick={() => onSelectNode(l.cultureId)}>
-                      <td>
-                        {new Date(l.at).toLocaleString('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
-                      </td>
-                      <td>
-                        <button className="cell-text-button" onClick={() => onSelectNode(l.cultureId)}>
-                          {l.cultureLabel} · P{l.culturePassage}
-                        </button>
-                      </td>
-                      <td>{l.confluencyPct == null ? '—' : `${l.confluencyPct}%`}</td>
-                      <td>{recordTitle(l)}</td>
-                      <td className="cell-log-note">
-                        <JournalNote log={l} />
-                      </td>
-                      <td>
-                        <RecordActions log={l} ws={ws} onChanged={changed} />
-                      </td>
-                    </tr>
-                  ))}
+                  {daily.map((l, i) => {
+                    const { date, time } = recordDateParts(l.at);
+                    const newDay = i === 0 || recordDateParts(daily[i - 1].at).date !== date;
+                    return (
+                      <Fragment key={l.id}>
+                        {newDay && (
+                          <tr className="cell-day-row">
+                            <th colSpan={6} scope="colgroup">
+                              <time dateTime={l.at.slice(0, 10)}>{date}</time>
+                            </th>
+                          </tr>
+                        )}
+                        <tr className={selected === l.cultureId ? 'is-selected' : ''} onClick={() => onSelectNode(l.cultureId)}>
+                          <td className="cell-log-date" title={new Date(l.at).toLocaleString('ko-KR')}>
+                            <time dateTime={l.at}>{time}</time>
+                          </td>
+                          <td className="cell-log-culture">
+                            <button className="cell-text-button" onClick={() => onSelectNode(l.cultureId)}>
+                              {l.cultureLabel}
+                            </button>
+                            {!l.cultureLabel.includes(`P${l.culturePassage}`) && <span className="cell-chip">P{l.culturePassage}</span>}
+                          </td>
+                          <td className="is-num">{l.confluencyPct == null ? <span className="is-empty">—</span> : <strong>{l.confluencyPct}%</strong>}</td>
+                          <td>
+                            <RecordBadge log={l} />
+                          </td>
+                          <td className="cell-log-note">
+                            <JournalNote log={l} />
+                          </td>
+                          <td className="is-actions">
+                            <RecordActions log={l} ws={ws} onChanged={changed} />
+                          </td>
+                        </tr>
+                      </Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -455,37 +491,50 @@ function LineageInner({ line, focusNodeId, onSelectNode, onChanged, externalRevi
       <section className="workbench-panel">
         <div className="cell-panel-heading">
           <h3>동결 · stock 재고</h3>
-          <span>{detail?.lots.reduce((sum, l) => sum + l.vialsRemaining, 0) ?? 0} vial</span>
+          <span>
+            남은 {detail?.lots.reduce((sum, l) => sum + l.vialsRemaining, 0) ?? 0} vial · stock {detail?.lots.length ?? 0}개
+          </span>
         </div>
         <div className="cell-table-scroll">
-          <table className="cell-workspace-table">
+          <table className="cell-workspace-table cell-stock-table">
             <thead>
               <tr>
                 <th>라벨</th>
                 <th>P</th>
-                <th>남은 / 최초</th>
+                <th className="is-num">남은 / 최초</th>
                 <th>보관 위치</th>
                 <th>입고 / 동결일</th>
                 <th>회복 확인</th>
-                <th>작업</th>
+                <th className="is-actions">작업</th>
               </tr>
             </thead>
             <tbody>
               {detail?.lots.map((l) => (
                 <tr key={l.id} className={selected === l.id ? 'is-selected' : ''} onClick={() => onSelectNode(l.id)}>
                   <td>
-                    <button className="cell-text-button" onClick={() => onSelectNode(l.id)}>
+                    <button className="cell-text-button cell-stock-label" onClick={() => onSelectNode(l.id)}>
                       {l.label}
                     </button>
                   </td>
-                  <td>{l.passage ?? '미정'}</td>
-                  <td>
-                    {l.vialsRemaining} / {l.vialsInitial}
+                  <td>{l.passage == null ? <span className="is-empty">미정</span> : <span className="cell-chip">P{l.passage}</span>}</td>
+                  <td className="is-num">
+                    <strong className={l.vialsRemaining ? '' : 'is-empty'}>{l.vialsRemaining}</strong>
+                    <span className="is-empty"> / {l.vialsInitial}</span>
                   </td>
-                  <td>{l.location || '위치 미정'}</td>
-                  <td>{new Date(l.eventAt).toLocaleDateString('ko-KR')}</td>
-                  <td>{l.recovery ? RECOVERY_LABELS[l.recovery.status] : '미기록'}</td>
+                  <td>{l.location ? l.location : <span className="is-empty">위치 미정</span>}</td>
+                  <td className="cell-log-date" title={new Date(l.eventAt).toLocaleDateString('ko-KR')}>
+                    <strong>{recordDateParts(l.eventAt).date}</strong>
+                  </td>
                   <td>
+                    {l.recovery ? (
+                      <span className="cell-chip" data-tone={{ unverified: undefined, confirmed: 'success', poor: 'danger' }[l.recovery.status]}>
+                        {RECOVERY_LABELS[l.recovery.status]}
+                      </span>
+                    ) : (
+                      <span className="is-empty">미기록</span>
+                    )}
+                  </td>
+                  <td className="is-actions">
                     <div className="cell-row-actions">
                       <button
                         className={smallBtnCls}

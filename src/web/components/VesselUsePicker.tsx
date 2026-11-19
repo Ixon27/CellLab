@@ -17,7 +17,7 @@ const numberText = (n: number | null | undefined) => (n === null || n === undefi
 /** Small status chips shared by the picker, the calculator and the inventory page. */
 export function VesselSpecBadges({ product }: { product: VesselProduct }) {
   return (
-    <span className="inline-flex flex-wrap items-center gap-1.5 text-[11.5px]">
+    <span className="inline-flex flex-wrap items-center gap-1.5 text-[12px]">
       <span
         className={`rounded-full px-2 py-0.5 ${product.specStatus === 'reference' ? 'bg-warning-soft text-warning' : 'bg-success-soft text-success'}`}
       >
@@ -97,7 +97,7 @@ export function VesselUsePicker({
 
   return (
     <div className="grid gap-2" data-testid="vessel-use-picker">
-      <label className="block text-[12.5px] font-medium text-fg">
+      <label className="block text-[12px] font-medium text-fg">
         용기 제품
         <select
           className={`${inputCls} mt-1`}
@@ -141,7 +141,7 @@ export function VesselUsePicker({
       {product && (
         <>
           <div className={`grid gap-2 ${withMedium ? 'sm:grid-cols-2' : ''}`}>
-            <label className="block text-[12.5px] font-medium text-fg">
+            <label className="block text-[12px] font-medium text-fg">
               {countLabel}{' '}
               <span className="font-normal text-fg-muted">
                 {product.wellsPerUnit > 1 ? `(plate당 ${product.wellsPerUnit} well · 여러 plate면 합계)` : '(dish·flask 몇 개)'}
@@ -162,7 +162,7 @@ export function VesselUsePicker({
               />
             </label>
             {withMedium && (
-              <label className="block text-[12.5px] font-medium text-fg">
+              <label className="block text-[12px] font-medium text-fg">
                 {product.wellsPerUnit > 1 ? 'well 1개당 배지 (mL, 선택)' : '용기 1개당 배지 (mL, 선택)'}
                 <input
                   className={`${inputCls} mt-1`}

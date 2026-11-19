@@ -116,7 +116,6 @@ export function CellLineDetail({ id }: { id: string }) {
     <div className="cell-detail-page">
       <header className="cell-detail-header">
         <div>
-          <p className="workbench-eyebrow">세포주 작업 공간</p>
           <h1>{detail.line.name}</h1>
           <p className="cell-detail-subtitle">
             {[detail.line.species, detail.line.sourceBank, detail.line.catalogNo].filter(Boolean).join(' · ') ||
@@ -132,12 +131,12 @@ export function CellLineDetail({ id }: { id: string }) {
             <strong>{detail.cultures.length}</strong>
             <span>전체 배양</span>
           </div>
-          <div>
+          <div className={detail.lots.some((l) => l.vialsRemaining > 0) ? undefined : 'is-warning'}>
             <strong>{detail.lots.reduce((sum, l) => sum + l.vialsRemaining, 0)}</strong>
-            <span>보관 바이알</span>
+            <span>보관 바이알{detail.lots.some((l) => l.vialsRemaining > 0) ? '' : ' · 없음'}</span>
           </div>
           <div className="cell-detail-actions">
-            <button className={primaryBtnCls} onClick={() => setExporting(true)}>
+            <button className={btnCls} onClick={() => setExporting(true)}>
               실험노트 내보내기
             </button>
             <button className={btnCls} onClick={() => { setConfirm(''); setDeleting(true); }}>

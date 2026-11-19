@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { CultureDto, LotDto, CellLineDto, ProfileDto } from '../../shared/cell-line';
 import { api } from '../api';
-import { Field, inputCls, primaryBtnCls } from '../components/Dialog';
+import { Field, inputCls, primaryBtnCls, smallBtnCls } from '../components/Dialog';
 import { FreezeDialog, PassageDialog, ThawDialog } from './dialogs/CultureDialogs';
 import { ObservationForm } from './operations/ObservationForm';
 import { FeedForm } from './operations/OperationForms';
@@ -194,16 +194,29 @@ export function QuickRecord({
           </button>
         </form>
       )}
-      {!compatible && (
-        <p className="cell-help">
-          {type === 'thaw'
-            ? lot && lot.vialsRemaining === 0
-              ? '남은 바이알이 없습니다. 이 stock에서 해동한 배양과 해동 기록은 오른쪽 선택 패널에서 언제든 수정·취소할 수 있습니다.'
-              : '남은 바이알이 있는 stock을 선택하세요.'
-            : culture
-              ? '종료된 배양에는 새 작업을 기록할 수 없습니다. 기존 기록은 기록표에서 수정하세요.'
-              : '활성 배양을 선택하거나 배양을 입고하세요.'}
-        </p>
+      {!compatible && type !== 'thaw' && culture && cultures.some((c) => c.status === 'active') ? (
+        <div className="cell-quick-picks">
+          <span>기록할 활성 배양</span>
+          {cultures
+            .filter((c) => c.status === 'active')
+            .map((c) => (
+              <button key={c.id} type="button" className={smallBtnCls} onClick={() => onSelect(c.id)}>
+                {c.label}
+              </button>
+            ))}
+        </div>
+      ) : (
+        !compatible && (
+          <p className="cell-help">
+            {type === 'thaw'
+              ? lot && lot.vialsRemaining === 0
+                ? '남은 바이알이 없습니다. 이 stock에서 해동한 배양과 해동 기록은 오른쪽 선택 패널에서 언제든 수정·취소할 수 있습니다.'
+                : '남은 바이알이 있는 stock을 선택하세요.'
+              : culture
+                ? '종료된 배양입니다. 활성 배양이 없어 새 작업을 기록할 수 없습니다.'
+                : '활성 배양을 선택하거나 배양을 입고하세요.'}
+          </p>
+        )
       )}
       {!cultures.length && (
         <button type="button" className={primaryBtnCls} onClick={onReceive}>

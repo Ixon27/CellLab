@@ -51,17 +51,18 @@ function useNow(everyMs = 60000) {
   return now;
 }
 
+/** A row whose only source note is "출처 미등록" shows a dot beside its value instead of a repeated badge. */
+const onlyMissing = (badges: SourceBadge[]) => badges.length > 0 && badges.every((b) => b.kind === 'unknown' && b.labels.length === 0);
+function MissingDot() {
+  return <span className="ml-1.5 inline-block size-1.5 rounded-full bg-warning align-middle" role="img" aria-label="출처 미등록" title="출처 미등록" />;
+}
 function Sources({ badges }: { badges: SourceBadge[] }) {
+  if (onlyMissing(badges)) return null;
   return (
     <span className="inline-flex flex-wrap items-center gap-x-1.5 gap-y-1">
       {badges.map((b) => (
         <span key={b.kind} className="inline-flex min-w-0 items-center gap-1">
-          <span
-            data-source-kind={b.kind}
-            className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] leading-4 ${
-              b.kind === 'unknown' ? 'bg-warning-soft text-warning' : 'bg-sunken text-fg-muted shadow-[inset_0_0_0_1px_var(--pr-line)]'
-            }`}
-          >
+          <span data-source-kind={b.kind} className={`shrink-0 text-[11px] font-medium ${b.kind === 'unknown' ? 'text-warning' : 'text-fg-muted'}`}>
             {sourceBadgeText(b)}
           </span>
           {b.labels.length > 0 && <span className="min-w-0 break-words text-[11px] text-fg-dim">{b.labels.join(' · ')}</span>}
@@ -72,8 +73,8 @@ function Sources({ badges }: { badges: SourceBadge[] }) {
 }
 function Item({ title, wide, children }: { title: string; wide?: boolean; children: ReactNode }) {
   return (
-    <section className={`min-w-0 space-y-1.5 rounded-lg bg-raised p-3 ${wide ? 'sm:col-span-2' : ''}`}>
-      <h3 className="text-[11px] font-semibold tracking-wide text-fg-dim">{title}</h3>
+    <section className={`min-w-0 space-y-1.5 border-t border-line pt-3 ${wide ? 'sm:col-span-2' : ''}`}>
+      <h3 className="text-[11px] font-medium text-fg-muted">{title}</h3>
       {children}
     </section>
   );
@@ -81,10 +82,11 @@ function Item({ title, wide, children }: { title: string; wide?: boolean; childr
 function Env({ row }: { row: ValueRow }) {
   return (
     <div className="space-y-0.5">
-      <p className="text-sm">
+      <p className="text-[13px]">
         <span className="text-fg-muted">{row.label} </span>
         {row.value ? <strong className="font-semibold tabular-nums">{row.value}</strong> : <span className="text-warning">미등록</span>}
         {row.via && <span className="text-[11px] text-fg-dim"> · {row.via}</span>}
+        {onlyMissing(row.sources) && <MissingDot />}
       </p>
       <Sources badges={row.sources} />
     </div>
@@ -136,6 +138,7 @@ export function CurrentCultureSummary({ detail }: { detail: CellLineDetailDto })
     active_no_culture: '배양을 선택하지 않아 현재 활성 조건 기준',
     none: '',
   }[r.profileBasis];
+  const missingSources = [r.medium.sources, r.temperature.sources, r.co2.sources, ...r.passageCriteria.map((c) => c.sources)].filter(onlyMissing).length;
 
   function choose(id: string) {
     setRequested(id || null);
@@ -179,12 +182,12 @@ export function CurrentCultureSummary({ detail }: { detail: CellLineDetailDto })
       {r.choice === 'needs_choice' && (
         <p className="text-xs text-fg-muted">활성 배양 {r.choices.length}개 · 배양을 고르면 그 배양의 기록만 표시합니다.</p>
       )}
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-x-6 gap-y-4 sm:grid-cols-2 xl:grid-cols-4">
         {culture && (
           <>
             <Item title="배양 용기">
               {vessel?.recorded ? (
-                <div className="space-y-0.5 text-sm">
+                <div className="space-y-0.5 text-[13px]">
                   <p className="font-medium">{vessel.label}</p>
                   <p>
                     {vessel.wellsPerUnit && vessel.wellsPerUnit > 1 ? '사용 well' : '용기'} <strong className="tabular-nums">{vessel.usedWells}</strong>
@@ -204,14 +207,14 @@ export function CurrentCultureSummary({ detail }: { detail: CellLineDetailDto })
                   </p>
                 </div>
               ) : (
-                <div className="space-y-0.5 text-sm">
+                <div className="space-y-0.5 text-[13px]">
                   <p className="font-medium">{vessel?.label ?? culture.vessel}</p>
                   <p className="text-xs text-fg-muted">사용 well 수·배지 부피 미기록</p>
                 </div>
               )}
             </Item>
             <Item title="마지막 배지 교체">
-              <div className="space-y-0.5 text-sm">
+              <div className="space-y-0.5 text-[13px]">
                 {r.replacement ? (
                   <>
                     <p>
@@ -242,7 +245,7 @@ export function CurrentCultureSummary({ detail }: { detail: CellLineDetailDto })
             </Item>
             <Item title="다음 확인 기준일 (참고)">
               {r.nextCheck ? (
-                <div className="space-y-0.5 text-sm">
+                <div className="space-y-0.5 text-[13px]">
                   <p>
                     <strong className="font-semibold tabular-nums">{dateOnly(r.nextCheck.dueAt)}</strong>
                     <span className="text-fg-muted">
@@ -255,7 +258,7 @@ export function CurrentCultureSummary({ detail }: { detail: CellLineDetailDto })
                   </p>
                 </div>
               ) : (
-                <p className="text-sm text-fg-muted">
+                <p className="text-[13px] text-fg-muted">
                   {r.mediumChangeText ? `교체 주기: ${r.mediumChangeText} · ` : ''}
                   {typeof profile?.fields.medium_change_days === 'number' ? pending('교체 기록이 없어 계산하지 않음') : '교체 기한(일) 미설정'}
                 </p>
@@ -263,7 +266,7 @@ export function CurrentCultureSummary({ detail }: { detail: CellLineDetailDto })
             </Item>
             <Item title="마지막 confluency">
               {r.confluency ? (
-                <div className="space-y-0.5 text-sm">
+                <div className="space-y-0.5 text-[13px]">
                   <p>
                     <strong className="font-semibold tabular-nums">{r.confluency.pct}%</strong>
                     <span className="text-fg-muted"> · {dateTime(r.confluency.at)}</span>
@@ -271,15 +274,15 @@ export function CurrentCultureSummary({ detail }: { detail: CellLineDetailDto })
                   <p className="text-xs text-fg-muted">{r.confluency.elapsed ? `${r.confluency.elapsed} 관찰 당시 값` : '관찰 당시 값'}</p>
                 </div>
               ) : (
-                <p className="text-sm">{pending(<span className="text-fg-muted">측정 기록 없음</span>)}</p>
+                <p className="text-[13px]">{pending(<span className="text-fg-muted">측정 기록 없음</span>)}</p>
               )}
             </Item>
           </>
         )}
         <Item title="완전 배지 · 제품" wide>
-          {!r.medium.parts.length && (r.medium.text ? <p className="text-sm font-medium">{r.medium.text}</p> : <p className="text-sm text-warning">배지 조성 미등록</p>)}
+          {!r.medium.parts.length && (r.medium.text ? <p className="text-[13px] font-medium">{r.medium.text}</p> : <p className="text-[13px] text-warning">배지 조성 미등록</p>)}
           {r.medium.parts.length > 0 && (
-            <ul className="space-y-1 text-sm">
+            <ul className="space-y-1 text-[13px]">
               {r.medium.parts.map((p, i) => (
                 <li key={i} className="min-w-0">
                   <span>{p.label || '(이름 없음)'}</span>
@@ -298,7 +301,13 @@ export function CurrentCultureSummary({ detail }: { detail: CellLineDetailDto })
               ))}
             </ul>
           )}
-          <Sources badges={r.medium.sources} />
+          {onlyMissing(r.medium.sources) ? (
+            <p className="text-[11px] text-fg-muted">
+              <MissingDot /> 출처 미등록
+            </p>
+          ) : (
+            <Sources badges={r.medium.sources} />
+          )}
         </Item>
         <Item title="배양 환경">
           <Env row={r.temperature} />
@@ -306,25 +315,26 @@ export function CurrentCultureSummary({ detail }: { detail: CellLineDetailDto })
         </Item>
         <Item title="계대 기준">
           {r.passageCriteria.length ? (
-            <ul className="space-y-1.5 text-sm">
+            <ul className="space-y-1.5 text-[13px]">
               {r.passageCriteria.map((c) => (
                 <li key={c.key} className="min-w-0 space-y-0.5">
                   <p>
                     <span className="text-fg-muted">{c.label} </span>
                     <strong className="font-semibold">{c.value}</strong>
                     {c.status && <span className="text-xs text-fg-muted"> · {CONDITION_STATUS_LABELS[c.status]}</span>}
+                    {onlyMissing(c.sources) && <MissingDot />}
                   </p>
                   <Sources badges={c.sources} />
                 </li>
               ))}
             </ul>
           ) : (
-            <p className="text-sm text-fg-muted">미등록 · 배양 조건에서 입력</p>
+            <p className="text-[13px] text-fg-muted">미등록 · 배양 조건에서 입력</p>
           )}
         </Item>
         {r.unresolved.length > 0 && (
           <Item title="미확정 · 조건부 조건">
-            <ul className="space-y-1 text-sm">
+            <ul className="space-y-1 text-[13px]">
               {r.unresolved.map((u) => (
                 <li key={u.id} className="min-w-0">
                   <span className="text-warning">{CONDITION_STATUS_LABELS[u.status]}</span> · {u.label}
@@ -338,7 +348,14 @@ export function CurrentCultureSummary({ detail }: { detail: CellLineDetailDto })
           </Item>
         )}
       </div>
-      <p className="text-[11px] text-fg-dim">입력한 조건과 기록을 그대로 보여 줍니다. 상태 표시는 사용자 판단이며 앱이 검증하지 않습니다.</p>
+      <p className="text-[11px] text-fg-dim">
+        {missingSources > 0 && (
+          <>
+            <MissingDot /> 출처 미등록 {missingSources}개 ·{' '}
+          </>
+        )}
+        입력한 조건과 기록을 그대로 보여 줍니다. 상태 표시는 사용자 판단이며 앱이 검증하지 않습니다.
+      </p>
     </section>
   );
 }
