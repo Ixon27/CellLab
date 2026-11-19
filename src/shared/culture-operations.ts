@@ -1,4 +1,4 @@
-import type { CultureVesselUse, VesselProduct } from './lab-products';
+import { MAX_FREEZING_MEDIUM_X, type CultureVesselUse, type VesselProduct } from './lab-products';
 
 /* ───────────── Vessel assignment (current culture) ───────────── */
 
@@ -368,43 +368,66 @@ export interface FreezePlanRecord extends FreezeAllocation {
   mix?: FreezeMix | null;
 }
 
-/** Per vial: counted suspension plus freezing medium up to the vial volume. */
+/**
+ * Per vial: cells in growth medium ("cell liquid") plus freezing medium up to the vial volume. The freezing medium's
+ * strength fixes the split: 1X (ready to use) fills the whole vial, so the pellet goes straight into it; 2X fills half
+ * and is mixed 1:1 with the cell liquid.
+ */
 export interface FreezeMixInput {
   suspensionCellsPerMl: number;
   targetCellsPerVial: number;
   volumePerVialMl: number;
   vials: number;
+  /** Strength of the freezing medium as supplied (1 = 1X ready to use, 2 = 2X). Absent on records made before it was asked. */
+  freezingMediumX?: number;
   /** DMSO % of the freezing medium as supplied, if known. */
   freezingMediumDmsoPct: number | null;
 }
+/**
+ * How the cell liquid is made from the counted suspension: 'pellet' = spin and resuspend the pellet in freezing medium
+ * (1X); 'dilute' = take the counted suspension and top it up with growth medium; 'respin' = the counted suspension is
+ * too dilute, so spin it and resuspend the pellet in the cell-liquid volume.
+ */
+export type FreezeMixMethod = 'pellet' | 'dilute' | 'respin';
 export interface FreezeMix extends FreezeMixInput {
+  /** Cell liquid per vial (0 with a 1X medium). */
   suspensionPerVialMl: number;
   freezingMediumPerVialMl: number;
   totalSuspensionMl: number;
   totalFreezingMediumMl: number;
+  /** Counted suspension that holds the cells of all vials. Absent on older records. */
+  countedSuspensionMl?: number;
+  method?: FreezeMixMethod;
+  /** Growth medium added to the counted suspension ('dilute'), or used to resuspend the pellet ('respin'). */
+  growthMediumMl?: number;
   /** DMSO % in the vial after mixing; null when the medium's DMSO % was not entered. */
   finalDmsoPct: number | null;
 }
-export function freezeMix(i: FreezeMixInput): FreezeMix {
+export function freezeMix(i: FreezeMixInput & { freezingMediumX: number }): FreezeMix {
   if (!Number.isFinite(i.suspensionCellsPerMl) || i.suspensionCellsPerMl <= 0) throw new Error('현탁액 생세포 농도는 0보다 커야 합니다');
   if (!Number.isFinite(i.targetCellsPerVial) || i.targetCellsPerVial <= 0) throw new Error('바이알당 목표 세포 수는 0보다 커야 합니다');
   if (!Number.isFinite(i.volumePerVialMl) || i.volumePerVialMl <= 0) throw new Error('바이알당 부피는 0보다 커야 합니다');
   if (!Number.isInteger(i.vials) || i.vials < 0) throw new Error('바이알 수를 확인하세요');
+  const x = i.freezingMediumX;
+  if (!Number.isFinite(x) || x < 1 || x > MAX_FREEZING_MEDIUM_X) throw new Error(`동결 배지 농도는 1–${MAX_FREEZING_MEDIUM_X}X입니다`);
   const dmso = i.freezingMediumDmsoPct;
   if (dmso !== null && (!Number.isFinite(dmso) || dmso < 0 || dmso > 100)) throw new Error('동결 배지 DMSO 농도는 0–100%입니다');
-  const suspension = i.targetCellsPerVial / i.suspensionCellsPerMl;
-  if (suspension > i.volumePerVialMl * (1 + 1e-9))
-    throw new Error(
-      `바이알당 현탁액 ${Number(suspension.toFixed(3))} mL가 바이알 부피 ${i.volumePerVialMl} mL보다 많습니다. 원심분리 후 더 적은 부피로 다시 현탁하세요`,
-    );
-  const medium = Math.max(0, i.volumePerVialMl - suspension);
+  const medium = i.volumePerVialMl / x;
+  // 1X leaves no room for cell liquid; the epsilon keeps 1X from reading as a sliver of liquid.
+  const liquid = i.volumePerVialMl - medium > i.volumePerVialMl * 1e-9 ? i.volumePerVialMl - medium : 0;
+  const counted = (i.vials * i.targetCellsPerVial) / i.suspensionCellsPerMl;
+  const totalLiquid = liquid * i.vials;
+  const method: FreezeMixMethod = liquid === 0 ? 'pellet' : counted <= totalLiquid * (1 + 1e-9) ? 'dilute' : 'respin';
   return {
     ...i,
-    suspensionPerVialMl: suspension,
+    suspensionPerVialMl: liquid,
     freezingMediumPerVialMl: medium,
-    totalSuspensionMl: suspension * i.vials,
+    totalSuspensionMl: totalLiquid,
     totalFreezingMediumMl: medium * i.vials,
-    finalDmsoPct: dmso === null ? null : (dmso * medium) / i.volumePerVialMl,
+    countedSuspensionMl: counted,
+    method,
+    growthMediumMl: method === 'dilute' ? Math.max(0, totalLiquid - counted) : method === 'respin' ? totalLiquid : 0,
+    finalDmsoPct: dmso === null ? null : dmso / x,
   };
 }
 export type RecoveryStatus = 'unverified' | 'confirmed' | 'poor';

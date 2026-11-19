@@ -34,6 +34,7 @@ const columns: Record<string, string> = {
   caution: 'caution',
   biosafety: 'biosafety',
   maxPassage: 'max_passage',
+  stockCellsPerMl: 'stock_cells_per_ml',
   tags: 'tags',
   notes: 'notes',
   sopProtocolId: 'sop_protocol_id',
@@ -64,6 +65,12 @@ function lineValues(body: Record<string, unknown>): Record<string, string | numb
       if (value !== null && (typeof value !== 'number' || !Number.isInteger(value) || value < 0))
         throw new HttpError(400, '최대 passage가 올바르지 않습니다');
       out.max_passage = value as number | null;
+      continue;
+    }
+    if (key === 'stockCellsPerMl') {
+      if (value !== null && (typeof value !== 'number' || !Number.isFinite(value) || value <= 0 || value > 1e10))
+        throw new HttpError(400, 'stock 세포 농도(cells/mL)는 0보다 큰 숫자여야 합니다');
+      out.stock_cells_per_ml = value as number | null;
       continue;
     }
     if (value !== null && typeof value !== 'string') throw new HttpError(400, '문자열 항목이 올바르지 않습니다');

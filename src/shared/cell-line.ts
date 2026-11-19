@@ -64,6 +64,8 @@ export interface CellLineDto {
   caution: string | null;
   biosafety: string | null;
   maxPassage: number | null;
+  /** Cells per mL of a frozen stock vial for this line (each vial is filled to the vial volume, 1 mL by default). */
+  stockCellsPerMl: number | null;
   tags: string[];
   notes: string;
   sopProtocolId: string | null;

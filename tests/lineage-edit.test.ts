@@ -230,12 +230,19 @@ describe('계수기 값과 남은 세포 처리', () => {
         vials: 4,
         location: 'LN2 B-2',
         freezingMedium: 'Cell Freezing Medium-DMSO',
-        plan: { recoveredLiveCells: 4_000_000, retainedCells: 0, targetCellsPerVial: 1_000_000, volumePerVialMl: 1, suspensionCellsPerMl: 3_000_000, freezingMediumDmsoPct: 10 },
+        plan: { recoveredLiveCells: 4_000_000, retainedCells: 0, targetCellsPerVial: 1_000_000, volumePerVialMl: 1, suspensionCellsPerMl: 3_000_000, freezingMediumX: 2, freezingMediumDmsoPct: 20 },
       },
     });
     expect(res.status).toBe(201);
     expect(res.data.lot).toMatchObject({ vialsInitial: 4, sourceCultureId: parent.id, location: 'LN2 B-2' });
-    expect(res.data.lot.freezePlan?.mix).toMatchObject({ freezingMediumPerVialMl: expect.closeTo(2 / 3, 6), finalDmsoPct: expect.closeTo(20 / 3, 6) });
+    // 2X medium: 0.5 mL cell liquid + 0.5 mL medium per vial; 4 vials need 4/3 mL of the counted suspension topped up to 2 mL.
+    expect(res.data.lot.freezePlan?.mix).toMatchObject({
+      method: 'dilute',
+      freezingMediumPerVialMl: 0.5,
+      countedSuspensionMl: expect.closeTo(4 / 3, 6),
+      growthMediumMl: expect.closeTo(2 / 3, 6),
+      finalDmsoPct: 10,
+    });
     const passage = (await logsOf(parent.id)).find((l) => l.type === 'passage')!;
     expect(passage).toMatchObject({ confluencyPct: 85, viabilityPct: 75, cellsPerMl: 3_000_000, count });
     expect(passage.passage).toMatchObject({ splitRatio: '1:3', leftoverHandling: 'frozen', leftoverCells: 4_000_000 });
@@ -256,14 +263,28 @@ describe('계수기 값과 남은 세포 처리', () => {
     expect(db.prepare('SELECT COUNT(*) AS n FROM cryo_lots WHERE source_culture_id=?').get(parent.id)).toEqual({ n: 0 });
   });
 
-  it('현탁액을 덜어 동결 배지와 섞는 양과 분주 비율을 계산한다', () => {
-    expect(freezeMix({ suspensionCellsPerMl: 4_000_000, targetCellsPerVial: 1_000_000, volumePerVialMl: 1, vials: 3, freezingMediumDmsoPct: null })).toMatchObject({
-      suspensionPerVialMl: 0.25,
-      freezingMediumPerVialMl: 0.75,
-      totalFreezingMediumMl: 2.25,
+  it('동결 배지 농도(X)로 바이알당 동결 배지 양을 정하고 현탁액을 희석하거나 다시 원심한다', () => {
+    const base = { suspensionCellsPerMl: 4_000_000, targetCellsPerVial: 1_000_000, volumePerVialMl: 1, vials: 3, freezingMediumDmsoPct: 20 };
+    expect(freezeMix({ ...base, freezingMediumX: 2 })).toMatchObject({
+      method: 'dilute',
+      suspensionPerVialMl: 0.5,
+      freezingMediumPerVialMl: 0.5,
+      countedSuspensionMl: 0.75,
+      growthMediumMl: 0.75,
+      totalFreezingMediumMl: 1.5,
+      finalDmsoPct: 10,
+    });
+    // 1X: the pellet goes straight into the medium.
+    expect(freezeMix({ ...base, freezingMediumX: 1, freezingMediumDmsoPct: null })).toMatchObject({
+      method: 'pellet',
+      suspensionPerVialMl: 0,
+      totalFreezingMediumMl: 3,
+      countedSuspensionMl: 0.75,
       finalDmsoPct: null,
     });
-    expect(() => freezeMix({ suspensionCellsPerMl: 500_000, targetCellsPerVial: 1_000_000, volumePerVialMl: 1, vials: 1, freezingMediumDmsoPct: 10 })).toThrow('다시 현탁');
+    // Too dilute to fit 1.5 mL of cell liquid: spin 3 mL and resuspend in 1.5 mL.
+    expect(freezeMix({ ...base, suspensionCellsPerMl: 1_000_000, freezingMediumX: 2 })).toMatchObject({ method: 'respin', countedSuspensionMl: 3, growthMediumMl: 1.5 });
+    expect(() => freezeMix({ ...base, freezingMediumX: 0.5 })).toThrow('동결 배지 농도');
     expect(splitRatio(21, 63)).toBe('1:3');
     expect(splitRatio(2, 5)).toBe('1:2.5');
     // 1:5 by vessels: one dish into five equal dishes carries all cells; one dish into one dish carries a fifth.

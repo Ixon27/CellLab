@@ -261,6 +261,7 @@ describe('조건 세트와 출처', () => {
       lotNo: 'L1',
       ingredients: [],
       ingredientsConfirmed: false,
+      strengthX: null,
       sourceLabel: '',
       url: null,
       capturedAt: '2026-01-01T00:00:00.000Z',

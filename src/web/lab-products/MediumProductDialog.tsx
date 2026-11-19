@@ -32,6 +32,7 @@ export function MediumProductDialog({
     initial?.ingredients.map((i) => ({ label: i.label, value: String(i.value), unit: i.unit })) ?? [],
   );
   const [confirmed, setConfirmed] = useState(initial?.ingredientsConfirmed ?? false);
+  const [strength, setStrength] = useState(initial?.strengthX == null ? '1' : String(initial.strengthX));
   const [sourceLabel, setSourceLabel] = useState(initial?.sourceLabel ?? '');
   const [url, setUrl] = useState(initial?.url ?? '');
   const [busy, setBusy] = useState(false);
@@ -49,6 +50,7 @@ export function MediumProductDialog({
       lotNo,
       ingredients: ingredients.map((i) => ({ label: i.label, value: i.value.trim() === '' ? NaN : Number(i.value), unit: i.unit })),
       ingredientsConfirmed: confirmed,
+      strengthX: kind === 'freezing_medium' && strength.trim() ? Number(strength) : null,
       sourceLabel,
       url: url.trim() || null,
     };
@@ -97,6 +99,20 @@ export function MediumProductDialog({
         <Field label="제품 이름">
           <input className={inputCls} aria-label="제품 이름" maxLength={200} value={label} onChange={(e) => setLabel(e.target.value)} />
         </Field>
+        {kind === 'freezing_medium' && (
+          <Field label="사용 농도 (X)" hint="완제품(바로 사용)은 1X, 세포액과 1:1로 섞는 2배 농도 배지는 2X. 동결 계산의 동결 배지 양이 이 값으로 정해집니다.">
+            <input
+              className={inputCls}
+              aria-label="사용 농도 (X)"
+              type="number"
+              min={1}
+              max={20}
+              step="any"
+              value={strength}
+              onChange={(e) => setStrength(e.target.value)}
+            />
+          </Field>
+        )}
         <Field label="제조사">
           <input className={inputCls} aria-label="제조사" maxLength={120} value={manufacturer} onChange={(e) => setManufacturer(e.target.value)} />
         </Field>

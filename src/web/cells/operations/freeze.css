@@ -1,0 +1,93 @@
+/* Freeze form: numbered sections and the live recipe box. */
+.op-section {
+  margin-bottom: 14px;
+  padding: 12px 14px 4px;
+  border: 1px solid var(--pr-line);
+  border-radius: 10px;
+}
+.op-section > legend {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.op-section > legend b {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--pr-accent-soft);
+  color: var(--pr-accent);
+  font-size: 11px;
+}
+.op-section-total {
+  margin: -2px 0 10px;
+  font-size: 13px;
+  color: var(--pr-fg-muted);
+}
+.op-section-total strong {
+  color: var(--pr-fg);
+  font-weight: 600;
+}
+.freeze-recipe {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--pr-sunken);
+  font-size: 13px;
+}
+.freeze-recipe.is-empty {
+  color: var(--pr-fg-muted);
+}
+.freeze-recipe-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px 20px;
+}
+.freeze-recipe-head > div {
+  display: grid;
+  gap: 2px;
+}
+.freeze-recipe-head > div span,
+.freeze-vial-picker > span:first-child {
+  font-size: 12px;
+  color: var(--pr-fg-muted);
+}
+.freeze-recipe-head strong {
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.freeze-vial-picker {
+  display: grid;
+  gap: 4px;
+}
+.freeze-vial-picker input[type='range'] {
+  width: 160px;
+}
+.freeze-recipe-cells {
+  color: var(--pr-fg-muted);
+}
+.freeze-steps {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 8px 10px 8px 28px;
+  border-radius: 8px;
+  background: var(--pr-surface);
+  box-shadow: inset 0 0 0 1px var(--pr-line);
+  list-style: decimal;
+  line-height: 1.55;
+}
+.freeze-steps strong {
+  font-weight: 600;
+  color: var(--pr-accent);
+}

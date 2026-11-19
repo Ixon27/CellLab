@@ -36,6 +36,7 @@ interface MediumRow {
   lot_no: string;
   ingredients: string;
   ingredients_confirmed: number;
+  strength_x: number | null;
   source_label: string;
   url: string | null;
   created_at: string;
@@ -76,6 +77,7 @@ export function toMediumProduct(r: MediumRow): MediumProduct {
     lotNo: r.lot_no,
     ingredients,
     ingredientsConfirmed: r.ingredients_confirmed === 1 && ingredients.length > 0,
+    strengthX: r.strength_x,
     sourceLabel: r.source_label,
     url: r.url,
     createdAt: r.created_at,
@@ -162,8 +164,8 @@ export function insertMediumProduct(input: MediumProductInput): MediumProduct {
   const id = nanoid(12);
   const at = now();
   db.prepare(
-    `INSERT INTO lab_medium_products(id,kind,label,manufacturer,catalog_no,lot_no,ingredients,ingredients_confirmed,source_label,url,created_at,updated_at)
-      VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,
+    `INSERT INTO lab_medium_products(id,kind,label,manufacturer,catalog_no,lot_no,ingredients,ingredients_confirmed,strength_x,source_label,url,created_at,updated_at)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
   ).run(
     id,
     input.kind,
@@ -173,6 +175,7 @@ export function insertMediumProduct(input: MediumProductInput): MediumProduct {
     input.lotNo,
     JSON.stringify(input.ingredients),
     input.ingredientsConfirmed ? 1 : 0,
+    input.strengthX,
     input.sourceLabel,
     input.url,
     at,
@@ -183,7 +186,7 @@ export function insertMediumProduct(input: MediumProductInput): MediumProduct {
 
 export function updateMediumProduct(id: string, input: MediumProductInput): MediumProduct {
   db.prepare(
-    `UPDATE lab_medium_products SET kind=?,label=?,manufacturer=?,catalog_no=?,lot_no=?,ingredients=?,ingredients_confirmed=?,source_label=?,url=?,updated_at=? WHERE id=?`,
+    `UPDATE lab_medium_products SET kind=?,label=?,manufacturer=?,catalog_no=?,lot_no=?,ingredients=?,ingredients_confirmed=?,strength_x=?,source_label=?,url=?,updated_at=? WHERE id=?`,
   ).run(
     input.kind,
     input.label,
@@ -192,6 +195,7 @@ export function updateMediumProduct(id: string, input: MediumProductInput): Medi
     input.lotNo,
     JSON.stringify(input.ingredients),
     input.ingredientsConfirmed ? 1 : 0,
+    input.strengthX,
     input.sourceLabel,
     input.url,
     now(),

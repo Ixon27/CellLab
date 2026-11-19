@@ -28,6 +28,7 @@ export interface CellLineRow {
   caution: string | null;
   biosafety: string | null;
   max_passage: number | null;
+  stock_cells_per_ml: number | null;
   tags: string;
   notes: string;
   sop_protocol_id: string | null;
@@ -118,6 +119,7 @@ export function toLineDto(r: CellLineRow): CellLineDto {
     caution: r.caution,
     biosafety: r.biosafety,
     maxPassage: r.max_passage,
+    stockCellsPerMl: r.stock_cells_per_ml,
     tags: parseJsonColumn<string[]>(r.tags, []),
     notes: r.notes,
     sopProtocolId: r.sop_protocol_id,

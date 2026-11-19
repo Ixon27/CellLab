@@ -67,11 +67,7 @@ CREATE TABLE IF NOT EXISTS lab_vessel_products(id TEXT PRIMARY KEY, label TEXT N
   medium_min_ml_per_well REAL, medium_max_ml_per_well REAL,
   spec_status TEXT NOT NULL DEFAULT 'reference' CHECK(spec_status IN ('reference','product_confirmed')),
   source_label TEXT NOT NULL DEFAULT '', url TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS lab_medium_products(id TEXT PRIMARY KEY,
-  kind TEXT NOT NULL CHECK(kind IN ('base_medium','serum','antibiotic','supplement','other')), label TEXT NOT NULL,
-  manufacturer TEXT NOT NULL DEFAULT '', catalog_no TEXT NOT NULL DEFAULT '', lot_no TEXT NOT NULL DEFAULT '',
-  ingredients TEXT NOT NULL DEFAULT '[]', ingredients_confirmed INTEGER NOT NULL DEFAULT 0,
-  source_label TEXT NOT NULL DEFAULT '', url TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+${mediumProductsDdl('lab_medium_products')}
 CREATE INDEX IF NOT EXISTS lab_medium_products_kind ON lab_medium_products(kind, label);
 `);
 db.exec(CULTURE_OPERATION_DDL);
@@ -113,6 +109,41 @@ export function migrateCultureProfiles(database: DatabaseSync): void {
   }
 }
 migrateCultureProfiles(db);
+
+/** Lab medium/reagent products; `strength_x` is the supplied strength of a freezing medium (1 = 1X, 2 = 2X). */
+function mediumProductsDdl(table: string): string {
+  return `CREATE TABLE IF NOT EXISTS ${table}(id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL CHECK(kind IN ('base_medium','serum','antibiotic','supplement','freezing_medium','other')), label TEXT NOT NULL,
+  manufacturer TEXT NOT NULL DEFAULT '', catalog_no TEXT NOT NULL DEFAULT '', lot_no TEXT NOT NULL DEFAULT '',
+  ingredients TEXT NOT NULL DEFAULT '[]', ingredients_confirmed INTEGER NOT NULL DEFAULT 0, strength_x REAL,
+  source_label TEXT NOT NULL DEFAULT '', url TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);`;
+}
+
+/**
+ * Additive migration for freezing stocks: the line's stock concentration, and freezing medium as a product kind with
+ * its strength (1X/2X). SQLite cannot widen a CHECK, so the product table is rebuilt once, keeping every row.
+ */
+export function migrateFreezingStock(database: DatabaseSync): void {
+  if (!(database.prepare('PRAGMA table_info(cell_lines)').all() as { name: string }[]).some((column) => column.name === 'stock_cells_per_ml')) {
+    database.exec('ALTER TABLE cell_lines ADD COLUMN stock_cells_per_ml REAL');
+  }
+  const table = database.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='lab_medium_products'").get() as { sql: string };
+  if (table.sql.includes('freezing_medium')) return;
+  const columns = 'id,kind,label,manufacturer,catalog_no,lot_no,ingredients,ingredients_confirmed,source_label,url,created_at,updated_at';
+  database.exec('BEGIN');
+  try {
+    database.exec(`${mediumProductsDdl('lab_medium_products_new')}
+INSERT INTO lab_medium_products_new(${columns}) SELECT ${columns} FROM lab_medium_products;
+DROP TABLE lab_medium_products;
+ALTER TABLE lab_medium_products_new RENAME TO lab_medium_products;
+CREATE INDEX IF NOT EXISTS lab_medium_products_kind ON lab_medium_products(kind, label);`);
+    database.exec('COMMIT');
+  } catch (error) {
+    database.exec('ROLLBACK');
+    throw error;
+  }
+}
+migrateFreezingStock(db);
 
 /**
  * Link thaw/passage/freeze records written before records carried links to what they made, and give every thawed culture

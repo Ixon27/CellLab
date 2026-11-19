@@ -1,6 +1,7 @@
 import type { CellLineDto } from '../../shared/cell-line';
 import { BANK_TO_DATABASE } from '../../shared/catalog';
 import { OptionCombobox } from '../components/OptionCombobox';
+import { ScientificInput } from '../components/CellCounterFields';
 import { inputCls } from '../components/Dialog';
 
 export type LineForm = Pick<
@@ -20,6 +21,7 @@ export type LineForm = Pick<
   | 'caution'
   | 'biosafety'
   | 'maxPassage'
+  | 'stockCellsPerMl'
   | 'tags'
   | 'notes'
   | 'synonyms'
@@ -41,6 +43,7 @@ export const emptyLine: LineForm = {
   caution: null,
   biosafety: null,
   maxPassage: null,
+  stockCellsPerMl: null,
   tags: [],
   notes: '',
   synonyms: [],
@@ -104,6 +107,15 @@ export function CellLineInfoForm({ value, onChange }: { value: LineForm; onChang
           onChange={(e) => onChange({ ...value, maxPassage: e.target.value === '' ? null : Number(e.target.value) })}
         />
       </label>
+      <div className="grid gap-1 text-sm">
+        세포 stock 농도 (cells/mL)
+        <ScientificInput
+          label="세포 stock 농도"
+          value={value.stockCellsPerMl === null ? '' : String(value.stockCellsPerMl)}
+          onChange={(text) => onChange({ ...value, stockCellsPerMl: text.trim() ? Number(text) : null })}
+        />
+        <span className="text-xs text-fg-muted">동결할 때 바이알당 세포 수(농도 × 바이알 부피, 기본 1 mL)로 자동 입력됩니다.</span>
+      </div>
       <label className="grid gap-1 text-sm">
         태그 (쉼표로 구분)
         <input

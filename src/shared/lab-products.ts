@@ -179,15 +179,18 @@ export function formatVesselUse(product: Pick<VesselProduct, 'label' | 'wellsPer
 // Medium / serum / antibiotic / reagent products
 // ---------------------------------------------------------------------------------------------
 
-export const MEDIUM_PRODUCT_KINDS = ['base_medium', 'serum', 'antibiotic', 'supplement', 'other'] as const;
+export const MEDIUM_PRODUCT_KINDS = ['base_medium', 'serum', 'antibiotic', 'supplement', 'freezing_medium', 'other'] as const;
 export type MediumProductKind = (typeof MEDIUM_PRODUCT_KINDS)[number];
 export const MEDIUM_KIND_LABELS: Record<MediumProductKind, string> = {
   base_medium: '기본 배지',
   serum: '혈청',
   antibiotic: '항생제',
   supplement: '첨가물',
+  freezing_medium: '동결 배지',
   other: '기타 시약',
 };
+/** Upper bound on a freezing medium's supplied strength (X). */
+export const MAX_FREEZING_MEDIUM_X = 20;
 export interface ProductIngredient {
   label: string;
   value: number;
@@ -204,6 +207,8 @@ export interface MediumProduct {
   ingredients: ProductIngredient[];
   /** True only when the user explicitly confirmed the ingredient concentrations against the product. */
   ingredientsConfirmed: boolean;
+  /** Supplied strength of a freezing medium (1 = 1X ready to use, 2 = 2X mixed 1:1 with cells); null otherwise or unknown. */
+  strengthX: number | null;
   sourceLabel: string;
   url: string | null;
   createdAt: string;
@@ -231,6 +236,9 @@ export function validateMediumProductInput(raw: unknown): MediumProductInput {
   const ingredientsConfirmed = r.ingredientsConfirmed ?? false;
   if (typeof ingredientsConfirmed !== 'boolean') return fail('농도 확인 값이 올바르지 않습니다');
   if (ingredientsConfirmed && ingredients.length === 0) return fail('농도를 확인함으로 저장하려면 성분을 1개 이상 입력하세요');
+  const strength = r.strengthX ?? null;
+  if (strength !== null && (typeof strength !== 'number' || !Number.isFinite(strength) || strength < 1 || strength > MAX_FREEZING_MEDIUM_X))
+    return fail(`동결 배지 농도는 1–${MAX_FREEZING_MEDIUM_X}X입니다`);
   return {
     kind: r.kind as MediumProductKind,
     label: str(r.label, '제품 이름', 200, true),
@@ -239,6 +247,7 @@ export function validateMediumProductInput(raw: unknown): MediumProductInput {
     lotNo: str(r.lotNo, 'Lot 번호', 120),
     ingredients,
     ingredientsConfirmed,
+    strengthX: r.kind === 'freezing_medium' ? strength : null,
     sourceLabel: str(r.sourceLabel, '출처', 300),
     url: optUrl(r.url),
   };
@@ -254,6 +263,7 @@ export function snapshotMediumProduct(p: MediumProduct, capturedAt: string): Med
     lotNo: p.lotNo,
     ingredients: p.ingredients.map((i) => ({ ...i })),
     ingredientsConfirmed: p.ingredientsConfirmed,
+    strengthX: p.strengthX,
     sourceLabel: p.sourceLabel,
     url: p.url,
     capturedAt,

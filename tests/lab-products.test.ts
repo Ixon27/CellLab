@@ -184,6 +184,12 @@ describe('medium product validation', () => {
     expect(() => validateMediumProductInput({ ...fbs, ingredients: [] })).toThrow();
     expect(validateMediumProductInput({ kind: 'other', label: 'x' }).ingredientsConfirmed).toBe(false);
   });
+  it('keeps a strength (X) only on freezing media and within 1–20X', () => {
+    const medium = { kind: 'freezing_medium', label: '2X 동결 배지', strengthX: 2 };
+    expect(validateMediumProductInput(medium).strengthX).toBe(2);
+    expect(validateMediumProductInput({ ...medium, kind: 'serum' }).strengthX).toBeNull();
+    expect(() => validateMediumProductInput({ ...medium, strengthX: 0.5 })).toThrow('1–20X');
+  });
   it('rejects bad kinds, concentrations and urls', () => {
     for (const bad of [{ kind: 'wine' }, { label: ' ' }, { ingredients: [{ label: 'a', value: 0, unit: 'U/mL' }] }, { ingredients: [{ label: 'a', value: 1, unit: '' }] }, { url: 'ftp://x' }])
       expect(() => validateMediumProductInput({ ...fbs, ...bad })).toThrow();
@@ -200,6 +206,7 @@ function product(over: Partial<MediumProduct> = {}): MediumProduct {
     lotNo: 'L-9',
     ingredients: [{ label: '성분 A', value: 10000, unit: 'U/mL' }],
     ingredientsConfirmed: true,
+    strengthX: null,
     sourceLabel: '라벨',
     url: null,
     createdAt: '2026-01-01T00:00:00.000Z',

@@ -49,7 +49,8 @@ export function LotRecoveryPanel({ lot, onSaved }: { lot: LotDto; onSaved(): voi
           </p>
           {plan.mix ? (
             <p>
-              바이알당 현탁액 {Number(plan.mix.suspensionPerVialMl.toFixed(4))} mL + 동결 배지 {Number(plan.mix.freezingMediumPerVialMl.toFixed(4))} mL
+              바이알당 세포액 {Number(plan.mix.suspensionPerVialMl.toFixed(4))} mL + 동결 배지
+              {plan.mix.freezingMediumX !== undefined && `(${plan.mix.freezingMediumX}X)`} {Number(plan.mix.freezingMediumPerVialMl.toFixed(4))} mL
               {plan.mix.finalDmsoPct !== null && ` · 최종 DMSO ${Number(plan.mix.finalDmsoPct.toFixed(2))}%`} · 미배분{' '}
               {plan.leftoverCells.toLocaleString()} cells
             </p>

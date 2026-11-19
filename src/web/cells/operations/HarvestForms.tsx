@@ -29,7 +29,7 @@ import { VesselUsePicker } from '../../components/VesselUsePicker';
 import { executionProfile } from '../culture-plan-state';
 import { ProtocolRunSection } from '../ProtocolRun';
 import { composeOperationNote, FieldRow, FormError, isoFromInput, localInput, optionalNumber, PlanRecordSection } from './common';
-import { FreezeMixSummary, planFreeze } from './FreezeMix';
+import { freezeRequest, FreezeStockFields, initialFreezeDraft, planFreeze } from './FreezeMix';
 import type { OperationProps } from './OperationForms';
 
 /** Parsed counter values plus the message of a bad entry (shown, never thrown at render). */
@@ -52,14 +52,6 @@ interface Child {
   suspensionMl: string;
 }
 const newChild = (): Child => ({ vessel: '', label: '', use: null, product: null, cells: '', suspensionMl: '' });
-interface FreezeDraft {
-  cellsPerVial: string;
-  volumeMl: string;
-  dmsoPct: string;
-  vials: string;
-  location: string;
-  medium: string;
-}
 
 /**
  * Passage: count right before (counter screen + confluency), seed new vessels, and decide what happens to the cells
@@ -79,14 +71,7 @@ export function PassageForm({ line, culture, profiles, initialAt, defaultCellsPe
   const [sourcePlates, setSourcePlates] = useState<number[]>(activePlates);
   const multiPlate = culture.plates.length > 1;
   const restPlates = activePlates.filter((no) => !sourcePlates.includes(no));
-  const [freeze, setFreeze] = useState<FreezeDraft>({
-    cellsPerVial: defaultCellsPerVial ? String(defaultCellsPerVial) : '',
-    volumeMl: '1',
-    dmsoPct: '',
-    vials: '',
-    location: '',
-    medium: '',
-  });
+  const [freeze, setFreeze] = useState(() => initialFreezeDraft(line, defaultCellsPerVial));
   const [note, setNote] = useState('');
   const [records, setRecords] = useState<Record<string, string>>({});
   const [protocolRun, setProtocolRun] = useState<ProtocolRunEdit>(null);
@@ -133,16 +118,7 @@ export function PassageForm({ line, culture, profiles, initialAt, defaultCellsPe
   const factor = splitFactor(ratio ?? auto.text);
 
   const freezePlan =
-    leftover === 'frozen'
-      ? planFreeze({
-          availableCells: leftoverCells,
-          suspensionCellsPerMl: concentrationN,
-          targetCellsPerVial: numberOrNull(freeze.cellsPerVial),
-          volumePerVialMl: numberOrNull(freeze.volumeMl),
-          vials: numberOrNull(freeze.vials),
-          dmsoPct: numberOrNull(freeze.dmsoPct),
-        })
-      : null;
+    leftover === 'frozen' ? planFreeze({ availableCells: leftoverCells, suspensionCellsPerMl: concentrationN, draft: freeze, line }) : null;
 
   /** Per dish: the suspension volume (and, when counted, the cells) for the chosen 1:N split. */
   function fillByRatio() {
@@ -180,28 +156,9 @@ export function PassageForm({ line, culture, profiles, initialAt, defaultCellsPe
         );
       if (leftover === 'frozen' && leftoverCells === null) throw new Error('남은 세포를 동결하려면 회수 생세포 수와 접종 세포 수가 필요합니다');
       let freezeBody: Record<string, unknown> | null = null;
-      if (leftover === 'frozen') {
-        const allocation = freezePlan?.allocation;
-        if (!allocation) throw new Error(freezePlan?.error || '동결할 바이알당 세포 수와 부피를 입력하세요');
-        const vials = numberOrNull(freeze.vials) ?? allocation.vials;
-        if (!Number.isInteger(vials) || vials < 1 || vials > allocation.possibleVials)
-          throw new Error(`동결 바이알 수는 1–${allocation.possibleVials} 사이여야 합니다`);
-        if (!freeze.location.trim()) throw new Error('동결 stock의 보관 위치를 입력하세요');
-        freezeBody = {
-          vials,
-          cellsPerVial: Number(freeze.cellsPerVial),
-          location: freeze.location,
-          freezingMedium: freeze.medium,
-          note: '계대하고 남은 세포 동결',
-          plan: {
-            recoveredLiveCells: leftoverCells,
-            retainedCells: 0,
-            targetCellsPerVial: Number(freeze.cellsPerVial),
-            volumePerVialMl: Number(freeze.volumeMl),
-            suspensionCellsPerMl: concentrationN,
-            freezingMediumDmsoPct: numberOrNull(freeze.dmsoPct),
-          },
-        };
+      if (leftover === 'frozen' && freezePlan && leftoverCells !== null) {
+        const request = freezeRequest(freezePlan, freeze, { recoveredLiveCells: leftoverCells, retainedCells: 0, suspensionCellsPerMl: concentrationN });
+        freezeBody = { ...request, note: '계대하고 남은 세포 동결' };
       }
       const result = await api<{ warnings: string[] }>(`/api/cultures/${culture.id}/passage`, {
         method: 'POST',
@@ -427,43 +384,9 @@ export function PassageForm({ line, culture, profiles, initialAt, defaultCellsPe
               ? `고른 plate는 계대함으로 표시되고 ${culture.label}은(는) 나머지 plate로 활성으로 남습니다.${leftover === 'frozen' ? ' 남은 세포로 만든 stock이 계보에 함께 생깁니다.' : ''}`
               : `${culture.label}은(는) 계대 완료로 종료됩니다.${leftover === 'frozen' ? ' 남은 세포로 만든 stock이 계보에 함께 생깁니다.' : ''}`}
         </p>
-        {leftover === 'frozen' && (
+        {leftover === 'frozen' && freezePlan && (
           <div className="mt-3">
-            <FieldRow>
-              <Field
-                label="바이알당 세포 수"
-                hint={defaultCellsPerVial ? `입고 stock 기록값 ${formatCount(defaultCellsPerVial)}에서 채웠습니다` : '입고 stock에 바이알당 세포 수가 없습니다'}
-              >
-                <input type="number" min="1" step="any" className={inputCls} value={freeze.cellsPerVial} onChange={(e) => setFreeze({ ...freeze, cellsPerVial: e.target.value })} />
-              </Field>
-              <Field label="바이알당 최종 부피 (mL)">
-                <input type="number" min="0.000001" step="any" className={inputCls} value={freeze.volumeMl} onChange={(e) => setFreeze({ ...freeze, volumeMl: e.target.value })} />
-              </Field>
-            </FieldRow>
-            <FieldRow>
-              <Field label="동결 배지 이름 (예: Cell Freezing Medium-DMSO)">
-                <input className={inputCls} value={freeze.medium} onChange={(e) => setFreeze({ ...freeze, medium: e.target.value })} />
-              </Field>
-              <Field label="동결 배지 DMSO 농도 (%, 선택)">
-                <input type="number" min="0" max="100" step="any" className={inputCls} value={freeze.dmsoPct} onChange={(e) => setFreeze({ ...freeze, dmsoPct: e.target.value })} />
-              </Field>
-            </FieldRow>
-            {freezePlan && <FreezeMixSummary plan={freezePlan} />}
-            <FieldRow>
-              <Field label={`동결 바이알 수${freezePlan?.allocation ? ` (최대 ${freezePlan.allocation.possibleVials})` : ''}`}>
-                <input
-                  type="number"
-                  min="1"
-                  className={inputCls}
-                  placeholder={freezePlan?.allocation ? String(freezePlan.allocation.vials) : ''}
-                  value={freeze.vials}
-                  onChange={(e) => setFreeze({ ...freeze, vials: e.target.value })}
-                />
-              </Field>
-              <Field label="보관 위치">
-                <input className={inputCls} value={freeze.location} onChange={(e) => setFreeze({ ...freeze, location: e.target.value })} />
-              </Field>
-            </FieldRow>
+            <FreezeStockFields line={line} draft={freeze} onChange={setFreeze} plan={freezePlan} sourceCellsPerVial={defaultCellsPerVial} />
           </div>
         )}
       </fieldset>
@@ -483,8 +406,9 @@ export function PassageForm({ line, culture, profiles, initialAt, defaultCellsPe
 }
 
 /**
- * Freeze: count (counter screen + confluency), cells kept growing, vials the cells allow, and how each vial is filled
- * from the counted suspension plus freezing medium.
+ * Freeze: count (counter screen + confluency), then the stock settings. The counter's live concentration × pellet
+ * suspension volume gives the cells; the line's stock concentration gives the cells per vial; the vial count is chosen
+ * within what the cells allow, and the freezing medium's strength fixes how much of it goes in.
  */
 export function FreezeForm({ line, culture, profiles, initialAt, defaultCellsPerVial, onSaved }: OperationProps) {
   const [at, setAt] = useState(() => localInput(initialAt ?? Date.now()));
@@ -493,13 +417,7 @@ export function FreezeForm({ line, culture, profiles, initialAt, defaultCellsPer
   const [recovered, setRecovered] = useState('');
   const [suspension, setSuspension] = useState('');
   const [retained, setRetained] = useState('0');
-  const [perVial, setPerVial] = useState(defaultCellsPerVial ? String(defaultCellsPerVial) : '');
-  const [volume, setVolume] = useState('1');
-  const [dmso, setDmso] = useState('');
-  const [desired, setDesired] = useState('');
-  const [vials, setVials] = useState('');
-  const [location, setLocation] = useState('');
-  const [medium, setMedium] = useState('');
+  const [stock, setStock] = useState(() => initialFreezeDraft(line, defaultCellsPerVial));
   const [end, setEnd] = useState(false);
   const [testVials, setTestVials] = useState('');
   const [testAt, setTestAt] = useState('');
@@ -514,26 +432,14 @@ export function FreezeForm({ line, culture, profiles, initialAt, defaultCellsPer
   const recoveredN = counted?.liveCells ?? numberOrNull(recovered);
   const suspensionN = counted?.liveCellsPerMl ?? numberOrNull(suspension);
   const retainedN = numberOrNull(retained) ?? 0;
-  const plan = planFreeze({
-    availableCells: recoveredN,
-    retainedCells: retainedN,
-    suspensionCellsPerMl: suspensionN,
-    targetCellsPerVial: numberOrNull(perVial),
-    volumePerVialMl: numberOrNull(volume),
-    desiredVials: numberOrNull(desired),
-    vials: numberOrNull(vials),
-    dmsoPct: numberOrNull(dmso),
-  });
-  const allocation = plan.allocation;
+  const plan = planFreeze({ availableCells: recoveredN, retainedCells: retainedN, suspensionCellsPerMl: suspensionN, draft: stock, line });
   async function save() {
     setBusy(true);
     setError(null);
     try {
       if (counterProblem) throw new Error(counterProblem);
-      if (!allocation) throw new Error(plan.error || '회수한 생세포 수, 바이알당 세포 수와 부피를 채우세요');
-      if (plan.error) throw new Error(plan.error);
-      if (!Number.isInteger(Number(vials)) || Number(vials) < 1 || Number(vials) > allocation.possibleVials)
-        throw new Error('실제 동결 바이알 수가 만들 수 있는 범위인지 확인하세요');
+      if (recoveredN === null) throw new Error('Live cell concentration과 펠릿 현탁 부피(또는 회수한 생세포 수)를 넣으세요');
+      const request = freezeRequest(plan, stock, { recoveredLiveCells: recoveredN, retainedCells: retainedN, suspensionCellsPerMl: suspensionN });
       const composed = composeOperationNote(note, profile, 'freeze', records);
       await api(`/api/cultures/${culture.id}/freeze`, {
         method: 'POST',
@@ -543,19 +449,10 @@ export function FreezeForm({ line, culture, profiles, initialAt, defaultCellsPer
           viabilityPct: counted?.viabilityPct ?? null,
           cellsPerMl: suspensionN,
           count: counted?.extras ?? (numberOrNull(counter.countSuspensionMl) ? { countSuspensionMl: Number(counter.countSuspensionMl) } : null),
-          vials: Number(vials),
-          cellsPerVial: Number(perVial),
-          freezingMedium: medium,
-          location,
+          ...request,
           endCulture: retainedN > 0 ? false : end,
           plan: {
-            recoveredLiveCells: recoveredN,
-            retainedCells: retainedN,
-            targetCellsPerVial: Number(perVial),
-            volumePerVialMl: Number(volume),
-            desiredVials: numberOrNull(desired),
-            suspensionCellsPerMl: suspensionN,
-            freezingMediumDmsoPct: numberOrNull(dmso),
+            ...request.plan,
             representativeThaw: testVials.trim()
               ? { vials: Number(testVials), plannedAt: testAt ? isoFromInput(testAt) : null, note: testNote }
               : null,
@@ -581,103 +478,92 @@ export function FreezeForm({ line, culture, profiles, initialAt, defaultCellsPer
     >
       <PlanRecordSection profiles={profiles} culture={culture} stage="freeze" lineId={line.id} records={records} onRecords={setRecords} />
       <ProtocolRunSection line={line} profile={profile} folder="freeze" value={protocolRun} onChange={setProtocolRun} />
-      <p className="mb-3 text-sm text-fg-muted">
-        회수한 생세포에서 계속 배양할 세포를 먼저 뺍니다. 현탁액 일부를 덜어 동결 배지와 섞는 경우, 바이알마다 넣을 현탁액·동결 배지 양을 계산합니다.
-      </p>
-      <FieldRow>
-        <Field label="동결 일시">
-          <input required type="datetime-local" className={inputCls} value={at} onChange={(e) => setAt(e.target.value)} />
-        </Field>
-        <Field label="동결 직전 confluency (%)">
-          <input type="number" min="0" max="100" step="any" className={inputCls} value={confluency} onChange={(e) => setConfluency(e.target.value)} />
-        </Field>
-      </FieldRow>
-      <Field label="펠릿 현탁 부피 (mL)" hint="계수하든 안 하든 펠릿을 다시 푼 배지 부피를 적습니다.">
-        <input
-          type="number"
-          min="0"
-          step="any"
-          className={inputCls}
-          value={counter.countSuspensionMl}
-          onChange={(e) => setCounter({ ...counter, countSuspensionMl: e.target.value })}
-        />
-      </Field>
-      <CellCounterFields value={counter} onChange={setCounter} withSuspension={false} />
-      {!counted && (
+      <fieldset className="op-section">
+        <legend>
+          <b>1</b>계수
+        </legend>
         <FieldRow>
-          <Field label="회수한 살아 있는 세포 수 (계수기 값이 없을 때)">
-            <input type="number" min="0" step="any" className={inputCls} value={recovered} onChange={(e) => setRecovered(e.target.value)} />
+          <Field label="동결 일시">
+            <input required type="datetime-local" className={inputCls} value={at} onChange={(e) => setAt(e.target.value)} />
           </Field>
-          <Field label="현탁액 생세포 농도 (cells/mL, 선택)">
-            <input type="number" min="0" step="any" className={inputCls} value={suspension} onChange={(e) => setSuspension(e.target.value)} />
+          <Field label="동결 직전 confluency (%)">
+            <input type="number" min="0" max="100" step="any" className={inputCls} value={confluency} onChange={(e) => setConfluency(e.target.value)} />
           </Field>
         </FieldRow>
-      )}
-      <FieldRow>
-        <Field label="계속 배양할 세포 수">
+        <Field label="펠릿 현탁 부피 (mL)" hint="펠릿을 다시 풀어 계수한 배지 부피. Live cell concentration × 이 부피 = 회수한 생세포">
+          <input
+            type="number"
+            min="0"
+            step="any"
+            className={inputCls}
+            value={counter.countSuspensionMl}
+            onChange={(e) => setCounter({ ...counter, countSuspensionMl: e.target.value })}
+          />
+        </Field>
+        <CellCounterFields value={counter} onChange={setCounter} withSuspension={false} />
+        {!counted && (
+          <details className="mb-3">
+            <summary className="cursor-pointer text-sm">계수기 값 없이 직접 입력</summary>
+            <FieldRow>
+              <Field label="회수한 살아 있는 세포 수">
+                <input type="number" min="0" step="any" className={inputCls} value={recovered} onChange={(e) => setRecovered(e.target.value)} />
+              </Field>
+              <Field label="현탁액 생세포 농도 (cells/mL, 선택)">
+                <input type="number" min="0" step="any" className={inputCls} value={suspension} onChange={(e) => setSuspension(e.target.value)} />
+              </Field>
+            </FieldRow>
+          </details>
+        )}
+        <Field label="계속 배양할 세포 수" hint="동결하지 않고 남겨 키울 세포. 없으면 0">
           <input required type="number" min="0" step="any" className={inputCls} value={retained} onChange={(e) => setRetained(e.target.value)} />
         </Field>
-        <Field
-          label="바이알당 세포 수"
-          hint={defaultCellsPerVial ? `입고 stock 기록값 ${formatCount(defaultCellsPerVial)}에서 채웠습니다` : undefined}
-        >
-          <input required type="number" min="1" step="any" className={inputCls} value={perVial} onChange={(e) => setPerVial(e.target.value)} />
-        </Field>
-      </FieldRow>
-      <FieldRow>
-        <Field label="바이알당 최종 부피 (mL)">
-          <input required type="number" min="0.000001" step="any" className={inputCls} value={volume} onChange={(e) => setVolume(e.target.value)} />
-        </Field>
-        <Field label="동결 배지 DMSO 농도 (%, 선택)">
-          <input type="number" min="0" max="100" step="any" className={inputCls} value={dmso} onChange={(e) => setDmso(e.target.value)} />
-        </Field>
-      </FieldRow>
-      <Field label="희망 바이알 수 (선택)">
-        <input type="number" min="1" className={inputCls} value={desired} onChange={(e) => setDesired(e.target.value)} />
-      </Field>
-      <FreezeMixSummary plan={plan} retainedCells={retainedN} />
-      {allocation && allocation.vials > 0 && (
-        <button type="button" className={`${smallBtnCls} mb-3`} onClick={() => setVials(String(allocation.vials))}>
-          계산한 바이알 수 {allocation.vials} 적용
-        </button>
-      )}
-      <FieldRow>
-        <Field label="실제 동결 바이알 수">
-          <input required type="number" min="1" max={allocation?.possibleVials} className={inputCls} value={vials} onChange={(e) => setVials(e.target.value)} />
-        </Field>
-        <Field label="보관 위치">
-          <input required className={inputCls} value={location} onChange={(e) => setLocation(e.target.value)} />
-        </Field>
-      </FieldRow>
-      <Field label="사용한 동결 배지·제품">
-        <input required className={inputCls} value={medium} onChange={(e) => setMedium(e.target.value)} />
-      </Field>
-      <fieldset className="mb-3 rounded-lg border border-line p-3">
-        <legend className="text-sm">대표 바이알 해동 확인 계획 (선택)</legend>
-        <Field label="확인할 바이알 수">
-          <input type="number" min="1" max={vials || undefined} className={inputCls} value={testVials} onChange={(e) => setTestVials(e.target.value)} />
-        </Field>
-        <Field label="해동 예정 일시">
-          <input type="datetime-local" className={inputCls} value={testAt} onChange={(e) => setTestAt(e.target.value)} />
-        </Field>
-        <Field label="회복 확인 방법·판단 기준">
-          <textarea className={inputCls} value={testNote} onChange={(e) => setTestNote(e.target.value)} />
+      </fieldset>
+      <fieldset className="op-section">
+        <legend>
+          <b>2</b>stock 만들기
+        </legend>
+        <p className="op-section-total">
+          회수 생세포 <strong>{recoveredN === null ? '—' : `${formatCount(recoveredN)} cells`}</strong>
+          {counted?.viabilityPct != null && ` · 생존율 ${counted.viabilityPct}%`}
+          {retainedN > 0 && recoveredN !== null && ` · 동결에 쓸 수 있는 세포 ${formatCount(Math.max(0, recoveredN - retainedN))}`}
+        </p>
+        <FreezeStockFields line={line} draft={stock} onChange={setStock} plan={plan} retainedCells={retainedN} sourceCellsPerVial={defaultCellsPerVial} />
+      </fieldset>
+      <fieldset className="op-section">
+        <legend>
+          <b>3</b>기록
+        </legend>
+        <label className="mb-3 flex gap-2 text-sm">
+          <input type="checkbox" checked={retainedN > 0 ? false : end} disabled={retainedN > 0} onChange={(e) => setEnd(e.target.checked)} />
+          동결 후 기존 배양 종료
+        </label>
+        {retainedN > 0 && (
+          <p className="mb-3 text-xs text-fg-muted">남겨 둔 세포가 있으므로 기존 배양은 활성으로 유지합니다. 새 용기로 계대한 작업은 별도로 기록하세요.</p>
+        )}
+        <details className="mb-3">
+          <summary className="cursor-pointer text-sm">대표 바이알 해동 확인 계획 (선택)</summary>
+          <div className="mt-2">
+            <FieldRow>
+              <Field label="확인할 바이알 수">
+                <input type="number" min="1" max={plan.vials || undefined} className={inputCls} value={testVials} onChange={(e) => setTestVials(e.target.value)} />
+              </Field>
+              <Field label="해동 예정 일시">
+                <input type="datetime-local" className={inputCls} value={testAt} onChange={(e) => setTestAt(e.target.value)} />
+              </Field>
+            </FieldRow>
+            <Field label="회복 확인 방법·판단 기준">
+              <textarea className={inputCls} value={testNote} onChange={(e) => setTestNote(e.target.value)} />
+            </Field>
+            <p className="mb-2 text-xs text-fg-muted">계획만으로 회복 확인·바이알 소모를 기록하지 않습니다. 해동 후 실제 관찰 결과는 재고 상세에서 입력합니다.</p>
+          </div>
+        </details>
+        <Field label="메모">
+          <textarea className={inputCls} value={note} onChange={(e) => setNote(e.target.value)} />
         </Field>
       </fieldset>
-      <label className="mb-3 flex gap-2 text-sm">
-        <input type="checkbox" checked={retainedN > 0 ? false : end} disabled={retainedN > 0} onChange={(e) => setEnd(e.target.checked)} />
-        동결 후 기존 배양 종료
-      </label>
-      {retainedN > 0 && (
-        <p className="mb-3 text-xs text-fg-muted">남겨 둔 세포가 있으므로 기존 배양은 활성으로 유지합니다. 새 용기로 계대한 작업은 별도로 기록하세요.</p>
-      )}
-      <p className="mb-3 text-xs text-fg-muted">계획만으로 회복 확인·바이알 소모를 기록하지 않습니다. 해동 후 실제 관찰 결과는 재고 상세에서 입력합니다.</p>
-      <Field label="메모">
-        <textarea className={inputCls} value={note} onChange={(e) => setNote(e.target.value)} />
-      </Field>
       <FormError>{error}</FormError>
-      <button className={primaryBtnCls} disabled={busy || !allocation || allocation.possibleVials < 1}>
-        {busy ? '저장 중…' : '동결·배분 저장'}
+      <button className={primaryBtnCls} disabled={busy || !plan.allocation || plan.allocation.possibleVials < 1}>
+        {busy ? '저장 중…' : `${plan.vials >= 1 ? `${plan.vials} vial ` : ''}동결·배분 저장`}
       </button>
     </form>
   );

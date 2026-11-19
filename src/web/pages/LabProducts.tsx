@@ -175,6 +175,9 @@ function MediumProducts() {
               <p className="text-[13.5px] font-medium text-fg">
                 {p.label}
                 <span className="ml-2 rounded-full bg-sunken px-2 py-0.5 text-[11.5px] font-normal text-fg-muted">{MEDIUM_KIND_LABELS[p.kind]}</span>
+                {p.strengthX !== null && (
+                  <span className="ml-1 rounded-full bg-accent-soft px-2 py-0.5 text-[11.5px] font-normal text-accent">{p.strengthX}X</span>
+                )}
               </p>
               <p className="mt-0.5 text-[12px] text-fg-muted">{productDetailText(p) || '제조사·카탈로그 번호 미등록'}</p>
               <p className="mt-1 flex flex-wrap items-center gap-2 text-[12px] text-fg-muted">

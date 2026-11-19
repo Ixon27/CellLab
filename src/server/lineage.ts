@@ -969,6 +969,8 @@ function freezeWithin(cultureId: string, b: LineageInput): { lot: LotDto; cultur
     cellsPerVial = inputs.targetCellsPerVial;
     const used = vials * inputs.targetCellsPerVial;
     const suspension = optionalNumber(raw.suspensionCellsPerMl, '현탁액 생세포 농도');
+    const strength = optionalNumber(raw.freezingMediumX, '동결 배지 농도(X)');
+    if (suspension && strength === null) throw new HttpError(400, '동결 배지 농도(X)를 입력하세요');
     freezePlan = {
       ...allocation,
       ...inputs,
@@ -976,17 +978,19 @@ function freezeWithin(cultureId: string, b: LineageInput): { lot: LotDto; cultur
       usedCells: used,
       leftoverCells: Math.max(0, allocation.availableCells - used),
       resuspendVolumeMl: vials * inputs.volumePerVialMl,
-      mix: suspension
-        ? valid(() =>
-            freezeMix({
-              suspensionCellsPerMl: suspension,
-              targetCellsPerVial: inputs.targetCellsPerVial,
-              volumePerVialMl: inputs.volumePerVialMl,
-              vials,
-              freezingMediumDmsoPct: optionalNumber(raw.freezingMediumDmsoPct, '동결 배지 DMSO 농도', 100),
-            }),
-          )
-        : null,
+      mix:
+        suspension && strength !== null
+          ? valid(() =>
+              freezeMix({
+                suspensionCellsPerMl: suspension,
+                targetCellsPerVial: inputs.targetCellsPerVial,
+                volumePerVialMl: inputs.volumePerVialMl,
+                vials,
+                freezingMediumX: strength,
+                freezingMediumDmsoPct: optionalNumber(raw.freezingMediumDmsoPct, '동결 배지 DMSO 농도', 100),
+              }),
+            )
+          : null,
     };
     if (raw.representativeThaw !== undefined && raw.representativeThaw !== null)
       thawPlan = valid(() => validateRepresentativeThaw(raw.representativeThaw, vials));
