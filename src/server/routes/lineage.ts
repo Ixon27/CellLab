@@ -20,6 +20,7 @@ import {
   getCulture,
   LOW_VIAL_THRESHOLD,
   passageCulture,
+  passagePlateGroups,
   receiveCulture,
   receiveLot,
   lineageAnnotations,
@@ -40,6 +41,7 @@ lineage.post('/cell-lines/:id/lots', async (c) => c.json(receiveLot(c.req.param(
 lineage.post('/cell-lines/:id/cultures', async (c) => c.json(receiveCulture(c.req.param('id'), await c.req.json<LineageInput>()), 201));
 lineage.post('/lots/:id/thaw', async (c) => c.json(thawLot(c.req.param('id'), await c.req.json<LineageInput>()), 201));
 lineage.post('/cultures/:id/passage', async (c) => c.json(passageCulture(c.req.param('id'), await c.req.json<LineageInput>()), 201));
+lineage.post('/cultures/:id/passage-groups', async (c) => c.json(passagePlateGroups(c.req.param('id'), await c.req.json<LineageInput>()), 201));
 lineage.post('/cultures/:id/freeze', async (c) => c.json(freezeCulture(c.req.param('id'), await c.req.json<LineageInput>()), 201));
 lineage.post('/cultures/:id/freeze-plan', async (c) => {
   getCulture(c.req.param('id'));

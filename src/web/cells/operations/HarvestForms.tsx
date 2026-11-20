@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { formatCount } from '../../../shared/cell-count';
+import type { CellLineDto, CultureDto } from '../../../shared/cell-line';
 import {
   LEFTOVER_HANDLINGS,
   LEFTOVER_LABELS,
@@ -23,13 +24,13 @@ import {
   type CounterDraft,
   type CounterResult,
 } from '../../components/CellCounterFields';
-import { Field, inputCls, primaryBtnCls, smallBtnCls } from '../../components/Dialog';
+import { Field, inputCls, primaryBtnCls, smallBtnCls, smallPrimaryBtnCls } from '../../components/Dialog';
 import { VesselChangeCalculator } from '../../components/VesselChangeCalculator';
 import { VesselUsePicker } from '../../components/VesselUsePicker';
 import { executionProfile } from '../culture-plan-state';
 import { ProtocolRunSection } from '../ProtocolRun';
 import { composeOperationNote, FieldRow, FormError, isoFromInput, localInput, optionalNumber, PlanRecordSection } from './common';
-import { freezeRequest, FreezeStockFields, initialFreezeDraft, planFreeze } from './FreezeMix';
+import { freezeRequest, FreezeStockFields, initialFreezeDraft, planFreeze, type FreezeStockDraft } from './FreezeMix';
 import type { OperationProps } from './OperationForms';
 
 /** Parsed counter values plus the message of a bad entry (shown, never thrown at render). */
@@ -52,53 +53,43 @@ interface Child {
   suspensionMl: string;
 }
 const newChild = (): Child => ({ vessel: '', label: '', use: null, product: null, cells: '', suspensionMl: '' });
+const unitsOf = (c: Child) => c.use?.usedWells ?? 1;
 
-/**
- * Passage: count right before (counter screen + confluency), seed new vessels, and decide what happens to the cells
- * not seeded (discard, keep growing in the original vessel, or freeze as stock in the same step).
- */
-export function PassageForm({ line, culture, profiles, initialAt, defaultCellsPerVial, onSaved }: OperationProps) {
-  const [at, setAt] = useState(() => localInput(initialAt ?? Date.now()));
-  const [confluency, setConfluency] = useState('');
-  const [reagent, setReagent] = useState('');
-  const [counter, setCounter] = useState<CounterDraft>(emptyCounter);
-  const [recovered, setRecovered] = useState('');
-  const [concentration, setConcentration] = useState('');
-  const [children, setChildren] = useState<Child[]>([newChild()]);
-  const [ratio, setRatio] = useState<string | null>(null);
-  const [leftover, setLeftover] = useState<LeftoverHandling>('discarded');
-  const activePlates = culture.plates.filter((p) => p.status === 'active').map((p) => p.no);
-  const [sourcePlates, setSourcePlates] = useState<number[]>(activePlates);
-  const multiPlate = culture.plates.length > 1;
-  const restPlates = activePlates.filter((no) => !sourcePlates.includes(no));
-  const [freeze, setFreeze] = useState(() => initialFreezeDraft(line, defaultCellsPerVial));
-  const [note, setNote] = useState('');
-  const [records, setRecords] = useState<Record<string, string>>({});
-  const [protocolRun, setProtocolRun] = useState<ProtocolRunEdit>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const profile = executionProfile(profiles, culture).profile;
-  const patch = (i: number, values: Partial<Child>) => setChildren((old) => old.map((v, j) => (i === j ? { ...v, ...values } : v)));
-  const { counted, problem: counterProblem } = readCounter(counter);
-  const recoveredN = counted?.liveCells ?? numberOrNull(recovered);
-  const concentrationN = counted?.liveCellsPerMl ?? numberOrNull(concentration);
+/** Inputs of one passage record. Plate-by-plate passages keep one per plate: the common one unless that plate differs. */
+interface PassageDraft {
+  confluency: string;
+  counter: CounterDraft;
+  recovered: string;
+  concentration: string;
+  children: Child[];
+  ratio: string | null;
+  leftover: LeftoverHandling;
+  freeze: FreezeStockDraft;
+}
+
+/** Counts, the 1:N split and the leftover freeze plan of one draft; `plateCount` = how many plates the cells came from. */
+function derivePassage(draft: PassageDraft, culture: CultureDto, plateCount: number, line: CellLineDto) {
+  const { counted, problem: counterProblem } = readCounter(draft.counter);
+  const recoveredN = counted?.liveCells ?? numberOrNull(draft.recovered);
+  const concentrationN = counted?.liveCellsPerMl ?? numberOrNull(draft.concentration);
+  const { children } = draft;
   const seededKnown = children.every((c) => c.cells.trim() !== '');
   const seeded = children.reduce((s, c) => s + (Number(c.cells) || 0), 0);
   const leftoverCells = recoveredN === null || !seededKnown ? null : Math.max(0, recoveredN - seeded);
   // The pellet is always resuspended; each new dish gets the same volume of that suspension.
-  const suspensionN = numberOrNull(counter.countSuspensionMl);
-  const unitsOf = (c: Child) => c.use?.usedWells ?? 1;
+  const suspensionN = numberOrNull(draft.counter.countSuspensionMl);
   const pipettedKnown = children.every((c) => Number(c.suspensionMl) > 0);
   const pipetted = children.reduce((s, c) => s + (Number(c.suspensionMl) || 0) * unitsOf(c), 0);
 
   // Vessel sizes in one unit: cm² when every vessel has an area on record, else vessel counts.
   const source = culture.vesselUse;
-  // Only the chosen vessels count as the area the cells came from.
+  const multiPlate = culture.plates.length > 1;
+  // Only the plates the cells came from count as the area they grew on.
   const fullArea = source ? vesselArea(source.product, source.usedWells) : null;
-  const sourceArea = fullArea === null ? null : fullArea * (multiPlate ? sourcePlates.length / culture.plates.length : 1);
+  const sourceArea = fullArea === null ? null : fullArea * (multiPlate ? plateCount / culture.plates.length : 1);
   const childAreas = children.map((c) => (c.product && c.use ? vesselArea(c.product, c.use.usedWells) : null));
   const areaKnown = sourceArea !== null && childAreas.every((a) => a !== null);
-  const before = areaKnown ? sourceArea : multiPlate ? Math.max(1, sourcePlates.length) : (source?.usedWells ?? 1);
+  const before = areaKnown ? sourceArea : multiPlate ? Math.max(1, plateCount) : (source?.usedWells ?? 1);
   const after = areaKnown ? childAreas.map((a) => a ?? 0) : children.map(unitsOf);
   const afterTotal = after.reduce((s, a) => s + a, 0);
   const sizeBasis = areaKnown
@@ -115,76 +106,143 @@ export function PassageForm({ line, culture, profiles, initialAt, defaultCellsPe
             basis: `현탁액 기준 · ${suspensionN} mL 중 ${Number(pipetted.toPrecision(4))} mL 접종 · ${sizeBasis}`,
           }
         : { text: splitRatio(before, afterTotal), basis: `세포를 전부 나눠 담은 경우 · ${sizeBasis}` };
-  const factor = splitFactor(ratio ?? auto.text);
-
   const freezePlan =
-    leftover === 'frozen' ? planFreeze({ availableCells: leftoverCells, suspensionCellsPerMl: concentrationN, draft: freeze, line }) : null;
+    draft.leftover === 'frozen' ? planFreeze({ availableCells: leftoverCells, suspensionCellsPerMl: concentrationN, draft: draft.freeze, line }) : null;
+  return {
+    counted,
+    counterProblem,
+    recoveredN,
+    concentrationN,
+    seededKnown,
+    seeded,
+    leftoverCells,
+    suspensionN,
+    childAreas,
+    before,
+    after,
+    auto,
+    factor: splitFactor(draft.ratio ?? auto.text),
+    freezePlan,
+  };
+}
+type PassageDerived = ReturnType<typeof derivePassage>;
 
-  /** Per dish: the suspension volume (and, when counted, the cells) for the chosen 1:N split. */
-  function fillByRatio() {
-    if (factor === null) return;
-    const shares = splitShares(before, after, factor);
-    setChildren((old) =>
-      old.map((c, i) => ({
-        ...c,
-        suspensionMl: suspensionN ? String(Number(((suspensionN * shares[i]) / unitsOf(c)).toPrecision(4))) : c.suspensionMl,
-        cells: recoveredN !== null ? String(Math.floor(recoveredN * shares[i])) : c.cells,
-      })),
+/** The per-record part of a passage request; throws the first input problem. */
+function passageRequest(draft: PassageDraft, d: PassageDerived) {
+  if (d.counterProblem) throw new Error(d.counterProblem);
+  const { children } = draft;
+  const filled = children.filter((c) => c.cells.trim()).length;
+  if (filled && !d.seededKnown) throw new Error('접종 세포 수는 모든 새 배양에 넣거나 모두 비워 두세요');
+  if (children.some((c) => c.cells.trim() && !(Number(c.cells) > 0))) throw new Error('접종 세포 수는 0보다 커야 합니다');
+  if (filled && d.recoveredN === null) throw new Error('접종 세포 수를 적으려면 회수한 생세포 수(계수기 값 또는 직접 입력)가 필요합니다');
+  if (filled && d.recoveredN !== null)
+    passageConservation(
+      d.recoveredN,
+      children.map((c) => Number(c.cells)),
     );
-    setRatio(ratio ?? auto.text);
+  if (draft.leftover === 'frozen' && d.leftoverCells === null) throw new Error('남은 세포를 동결하려면 회수 생세포 수와 접종 세포 수가 필요합니다');
+  let freeze: Record<string, unknown> | null = null;
+  if (draft.leftover === 'frozen' && d.freezePlan && d.leftoverCells !== null) {
+    const request = freezeRequest(d.freezePlan, draft.freeze, { recoveredLiveCells: d.leftoverCells, retainedCells: 0, suspensionCellsPerMl: d.concentrationN });
+    freeze = { ...request, note: '계대하고 남은 세포 동결' };
   }
-  /** Same suspension volume into every dish of a new culture; with a live concentration it gives the cells too. */
-  function setPerDishMl(i: number, text: string) {
-    const ml = Number(text);
-    const units = unitsOf(children[i]);
-    patch(i, { suspensionMl: text, cells: text.trim() && ml > 0 && concentrationN ? String(Math.round(ml * units * concentrationN)) : '' });
-  }
+  const { concentrationN } = d;
+  return {
+    confluencyPct: optionalNumber(draft.confluency, 'Confluency'),
+    viabilityPct: d.counted?.viabilityPct ?? null,
+    count: d.counted?.extras ?? (d.suspensionN ? { countSuspensionMl: d.suspensionN } : null),
+    recoveredLiveCells: d.recoveredN,
+    cellsPerMl: concentrationN,
+    splitRatio: draft.ratio ?? d.auto.text,
+    children: children.map((c) => ({
+      vessel: c.vessel,
+      vesselUse: c.use,
+      label: c.label,
+      seededCells: d.seededKnown ? Number(c.cells) : null,
+      seededVolumeMl: d.seededKnown && concentrationN && concentrationN > 0 ? Number(c.cells) / concentrationN : null,
+    })),
+    keepParent: draft.leftover === 'kept',
+    freeze,
+  };
+}
+
+/**
+ * Passage: count right before (counter screen + confluency), seed new vessels, and decide what happens to the cells
+ * not seeded (discard, keep growing in the original vessel, or freeze as stock in the same step). Several plates are
+ * either pooled into one record or passaged plate by plate: common conditions, with any plate given its own.
+ */
+export function PassageForm({ line, culture, profiles, initialAt, defaultCellsPerVial, onSaved }: OperationProps) {
+  const [at, setAt] = useState(() => localInput(initialAt ?? Date.now()));
+  const [reagent, setReagent] = useState('');
+  const [common, setCommon] = useState<PassageDraft>(() => ({
+    confluency: '',
+    counter: emptyCounter(),
+    recovered: '',
+    concentration: '',
+    children: [newChild()],
+    ratio: null,
+    leftover: 'discarded',
+    freeze: initialFreezeDraft(line, defaultCellsPerVial),
+  }));
+  const activePlates = culture.plates.filter((p) => p.status === 'active').map((p) => p.no);
+  const [sourcePlates, setSourcePlates] = useState<number[]>(activePlates);
+  const [perPlate, setPerPlate] = useState(false);
+  /** Plate-by-plate mode: plates whose conditions differ from the common ones. */
+  const [own, setOwn] = useState<Record<number, PassageDraft>>({});
+  /** Plate-by-plate mode: the plate being edited; null = the common conditions. */
+  const [tab, setTab] = useState<number | null>(null);
+  const [note, setNote] = useState('');
+  const [records, setRecords] = useState<Record<string, string>>({});
+  const [protocolRun, setProtocolRun] = useState<ProtocolRunEdit>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const profile = executionProfile(profiles, culture).profile;
+  const multiPlate = culture.plates.length > 1;
+  const byPlate = multiPlate && perPlate && sourcePlates.length > 1;
+
+  // One passage record per plate, or one for all chosen plates pooled.
+  const groups = byPlate ? sourcePlates.map((no) => ({ plates: [no], draft: own[no] ?? common })) : [{ plates: sourcePlates, draft: common }];
+  const editing = byPlate && tab !== null && sourcePlates.includes(tab) ? tab : null;
+  const editDraft = editing === null ? common : own[editing];
+  const updateDraft = (fn: (old: PassageDraft) => PassageDraft) =>
+    editing === null ? setCommon(fn) : setOwn((old) => ({ ...old, [editing]: fn(old[editing]) }));
+
+  const leaving = groups.filter((g) => g.draft.leftover !== 'kept').flatMap((g) => g.plates);
+  const remaining = activePlates.filter((no) => !leaving.includes(no));
+  const unchosen = activePlates.filter((no) => !sourcePlates.includes(no));
+  const outcome = [
+    byPlate ? `plate별로 계대 기록 ${groups.length}개를 만듭니다.` : '',
+    !remaining.length
+      ? `${culture.label}은(는) 계대 완료로 종료됩니다.`
+      : multiPlate
+        ? `plate ${remaining.join(', ')}은(는) 활성으로 남습니다.${unchosen.length ? ' 버린 plate는 선택 패널의 plate 폐기로 기록하세요.' : ''}`
+        : `${culture.label}은(는) 활성으로 남습니다.`,
+    groups.some((g) => g.draft.leftover === 'frozen') ? '남은 세포로 만든 stock이 계보에 함께 생깁니다.' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
   async function save() {
     setBusy(true);
     setError(null);
     try {
-      if (counterProblem) throw new Error(counterProblem);
       if (multiPlate && !sourcePlates.length) throw new Error('계대한 plate를 하나 이상 고르세요');
-      const filled = children.filter((c) => c.cells.trim()).length;
-      if (filled && !seededKnown) throw new Error('접종 세포 수는 모든 새 배양에 넣거나 모두 비워 두세요');
-      if (children.some((c) => c.cells.trim() && !(Number(c.cells) > 0))) throw new Error('접종 세포 수는 0보다 커야 합니다');
-      if (filled && recoveredN === null) throw new Error('접종 세포 수를 적으려면 회수한 생세포 수(계수기 값 또는 직접 입력)가 필요합니다');
-      if (filled && recoveredN !== null)
-        passageConservation(
-          recoveredN,
-          children.map((c) => Number(c.cells)),
-        );
-      if (leftover === 'frozen' && leftoverCells === null) throw new Error('남은 세포를 동결하려면 회수 생세포 수와 접종 세포 수가 필요합니다');
-      let freezeBody: Record<string, unknown> | null = null;
-      if (leftover === 'frozen' && freezePlan && leftoverCells !== null) {
-        const request = freezeRequest(freezePlan, freeze, { recoveredLiveCells: leftoverCells, retainedCells: 0, suspensionCellsPerMl: concentrationN });
-        freezeBody = { ...request, note: '계대하고 남은 세포 동결' };
-      }
-      const result = await api<{ warnings: string[] }>(`/api/cultures/${culture.id}/passage`, {
-        method: 'POST',
-        json: {
-          at: isoFromInput(at),
-          confluencyPct: optionalNumber(confluency, 'Confluency'),
-          viabilityPct: counted?.viabilityPct ?? null,
-          count: counted?.extras ?? (suspensionN ? { countSuspensionMl: suspensionN } : null),
-          dissociationReagent: reagent,
-          recoveredLiveCells: recoveredN,
-          cellsPerMl: concentrationN,
-          splitRatio: ratio ?? auto.text,
-          children: children.map((c) => ({
-            vessel: c.vessel,
-            vesselUse: c.use,
-            label: c.label,
-            seededCells: seededKnown ? Number(c.cells) : null,
-            seededVolumeMl: seededKnown && concentrationN && concentrationN > 0 ? Number(c.cells) / concentrationN : null,
-          })),
-          note: composeOperationNote(note, profile, 'passage', records),
-          protocolRun,
-          keepParent: leftover === 'kept',
-          sourcePlates: multiPlate ? sourcePlates : null,
-          freeze: freezeBody,
-        },
+      const shared = {
+        at: isoFromInput(at),
+        dissociationReagent: reagent,
+        note: composeOperationNote(note, profile, 'passage', records),
+        protocolRun,
+      };
+      const bodies = groups.map((g) => {
+        try {
+          return { ...shared, ...passageRequest(g.draft, derivePassage(g.draft, culture, g.plates.length, line)), sourcePlates: multiPlate ? g.plates : null };
+        } catch (e) {
+          throw new Error(byPlate ? `plate ${g.plates[0]}: ${(e as Error).message}` : (e as Error).message);
+        }
       });
+      const result = byPlate
+        ? await api<{ warnings: string[] }>(`/api/cultures/${culture.id}/passage-groups`, { method: 'POST', json: { groups: bodies } })
+        : await api<{ warnings: string[] }>(`/api/cultures/${culture.id}/passage`, { method: 'POST', json: bodies[0] });
       if (result.warnings.length) alert(result.warnings.join('\n'));
       onSaved();
     } catch (e) {
@@ -205,14 +263,9 @@ export function PassageForm({ line, culture, profiles, initialAt, defaultCellsPe
       </p>
       <PlanRecordSection profiles={profiles} culture={culture} stage="passage" lineId={line.id} records={records} onRecords={setRecords} />
       <ProtocolRunSection line={line} profile={profile} folder="passage" value={protocolRun} onChange={setProtocolRun} />
-      <FieldRow>
-        <Field label="계대 일시">
-          <input required type="datetime-local" className={inputCls} value={at} onChange={(e) => setAt(e.target.value)} />
-        </Field>
-        <Field label="계대 직전 confluency (%)">
-          <input type="number" min="0" max="100" step="any" className={inputCls} value={confluency} onChange={(e) => setConfluency(e.target.value)} />
-        </Field>
-      </FieldRow>
+      <Field label="계대 일시">
+        <input required type="datetime-local" className={inputCls} value={at} onChange={(e) => setAt(e.target.value)} />
+      </Field>
       {multiPlate && (
         <fieldset className="mb-3 rounded-lg border border-line p-3">
           <legend className="px-1 text-sm font-medium">계대한 plate</legend>
@@ -232,10 +285,24 @@ export function PassageForm({ line, culture, profiles, initialAt, defaultCellsPe
               </label>
             ))}
           </div>
+          {sourcePlates.length > 1 && (
+            <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm">
+              <label className="flex items-center gap-1.5">
+                <input type="radio" name="plate-mode" checked={!perPlate} onChange={() => setPerPlate(false)} />
+                모아서 한 번에 계수·분주
+              </label>
+              <label className="flex items-center gap-1.5">
+                <input type="radio" name="plate-mode" checked={perPlate} onChange={() => setPerPlate(true)} />
+                plate별로 따로 (공통 조건 + plate별 수정)
+              </label>
+            </div>
+          )}
           <p className="mt-1 text-xs text-fg-muted">
-            {restPlates.length
-              ? `고르지 않은 plate ${restPlates.join(', ')}은(는) 활성으로 남습니다. 버린 plate는 선택 패널의 plate 폐기로 기록하세요.`
-              : '고른 plate가 계보에서 새 배양으로 이어집니다.'}
+            {byPlate
+              ? 'plate마다 계대 기록과 새 배양을 따로 만들어 계보에서 각 plate가 자기 새 배양으로 이어집니다. 값은 plate 1개 기준입니다.'
+              : sourcePlates.length > 1
+                ? '고른 plate의 세포를 모아 한 번 계수하고 나눠 담은 것으로 기록합니다.'
+                : '고른 plate가 계보에서 새 배양으로 이어집니다.'}
           </p>
         </fieldset>
       )}
@@ -249,6 +316,132 @@ export function PassageForm({ line, culture, profiles, initialAt, defaultCellsPe
           placeholder="제품·농도·실제 처리 조건은 확인한 SOP를 따르세요"
         />
       </Field>
+      {byPlate && (
+        <div className="mb-3 flex flex-wrap gap-1.5">
+          <button type="button" className={editing === null ? smallPrimaryBtnCls : smallBtnCls} aria-pressed={editing === null} onClick={() => setTab(null)}>
+            공통 조건
+          </button>
+          {sourcePlates.map((no) => (
+            <button key={no} type="button" className={editing === no ? smallPrimaryBtnCls : smallBtnCls} aria-pressed={editing === no} onClick={() => setTab(no)}>
+              plate {no} · {own[no] ? '따로 입력' : '공통'}
+            </button>
+          ))}
+        </div>
+      )}
+      {editing !== null && (
+        <label className="mb-3 flex items-center gap-1.5 text-sm">
+          <input
+            type="checkbox"
+            checked={!own[editing]}
+            onChange={(e) => {
+              const checked = e.target.checked;
+              setOwn((old) => {
+                const next = { ...old };
+                if (checked) delete next[editing];
+                else next[editing] = structuredClone(common);
+                return next;
+              });
+            }}
+          />
+          plate {editing}에 공통 조건 그대로 적용
+        </label>
+      )}
+      {editDraft ? (
+        <>
+          {byPlate && (
+            <p className="mb-3 rounded-lg bg-sunken p-3 text-xs text-fg-muted">
+              {editing === null
+                ? `공통 조건을 쓰는 plate(${sourcePlates.filter((no) => !own[no]).join(', ') || '없음'})마다 이 값으로 계대 기록과 새 배양을 하나씩 만듭니다.`
+                : `plate ${editing}만의 값입니다. 공통 조건을 복사해 시작했으며, 이후 공통 조건을 바꿔도 이 plate에는 반영되지 않습니다.`}
+            </p>
+          )}
+          <PassageDraftFields
+            key={editing ?? 'common'}
+            name={`leftover-${editing ?? 'common'}`}
+            draft={editDraft}
+            update={updateDraft}
+            d={derivePassage(editDraft, culture, byPlate ? 1 : sourcePlates.length, line)}
+            line={line}
+            defaultCellsPerVial={defaultCellsPerVial}
+          />
+        </>
+      ) : (
+        <p className="mb-3 rounded-lg bg-sunken p-3 text-sm">
+          plate {editing}은(는) 공통 조건 탭의 값으로 기록합니다. 이 plate만 다른 값이 있으면 위 체크를 풀어 공통 조건을 복사한 뒤 바꾸세요.
+        </p>
+      )}
+      <p className="mb-3 text-sm text-fg-muted">{outcome}</p>
+      <details className="mb-3">
+        <summary className="cursor-pointer text-sm">용기 변경 계산 열기 (기록에 자동 적용하지 않음)</summary>
+        <VesselChangeCalculator source={{ use: culture.vesselUse }} />
+      </details>
+      <Field label="메모">
+        <textarea className={inputCls} value={note} onChange={(e) => setNote(e.target.value)} />
+      </Field>
+      <FormError>{error}</FormError>
+      <button className={primaryBtnCls} disabled={busy}>
+        {busy ? '저장 중…' : byPlate ? `계대 저장 (plate ${groups.length}개)` : '계대 저장'}
+      </button>
+    </form>
+  );
+}
+
+/** Count, new vessels, split and leftover handling of one passage record. */
+function PassageDraftFields({
+  draft,
+  update,
+  d,
+  line,
+  defaultCellsPerVial,
+  name,
+}: {
+  draft: PassageDraft;
+  update(fn: (old: PassageDraft) => PassageDraft): void;
+  d: PassageDerived;
+  line: CellLineDto;
+  defaultCellsPerVial?: number | null;
+  /** Radio group name, unique per draft. */
+  name: string;
+}) {
+  const set = (patch: Partial<PassageDraft>) => update((old) => ({ ...old, ...patch }));
+  const patchChild = (i: number, values: Partial<Child>) =>
+    update((old) => ({ ...old, children: old.children.map((v, j) => (i === j ? { ...v, ...values } : v)) }));
+  const { children, counter, ratio } = draft;
+  const { recoveredN, concentrationN, suspensionN, seededKnown, seeded, leftoverCells, factor, auto } = d;
+
+  /** Per dish: the suspension volume (and, when counted, the cells) for the chosen 1:N split. */
+  function fillByRatio() {
+    if (factor === null) return;
+    const shares = splitShares(d.before, d.after, factor);
+    update((old) => ({
+      ...old,
+      ratio: old.ratio ?? auto.text,
+      children: old.children.map((c, i) => ({
+        ...c,
+        suspensionMl: suspensionN ? String(Number(((suspensionN * shares[i]) / unitsOf(c)).toPrecision(4))) : c.suspensionMl,
+        cells: recoveredN !== null ? String(Math.floor(recoveredN * shares[i])) : c.cells,
+      })),
+    }));
+  }
+  /** Same suspension volume into every dish of a new culture; with a live concentration it gives the cells too. */
+  function setPerDishMl(i: number, text: string) {
+    const ml = Number(text);
+    const units = unitsOf(children[i]);
+    patchChild(i, { suspensionMl: text, cells: text.trim() && ml > 0 && concentrationN ? String(Math.round(ml * units * concentrationN)) : '' });
+  }
+  return (
+    <>
+      <Field label="계대 직전 confluency (%)">
+        <input
+          type="number"
+          min="0"
+          max="100"
+          step="any"
+          className={inputCls}
+          value={draft.confluency}
+          onChange={(e) => set({ confluency: e.target.value })}
+        />
+      </Field>
       <Field label="펠릿 현탁 부피 (mL)" hint="계수하든 안 하든 펠릿을 다시 푼 배지 부피를 적습니다. 새 dish에 덜어 넣은 양과 비교해 분주 비율을 계산합니다.">
         <input
           type="number"
@@ -256,33 +449,37 @@ export function PassageForm({ line, culture, profiles, initialAt, defaultCellsPe
           step="any"
           className={inputCls}
           value={counter.countSuspensionMl}
-          onChange={(e) => setCounter({ ...counter, countSuspensionMl: e.target.value })}
+          onChange={(e) => set({ counter: { ...counter, countSuspensionMl: e.target.value } })}
         />
       </Field>
-      <CellCounterFields value={counter} onChange={setCounter} withSuspension={false} />
-      {!counted && (
+      <CellCounterFields value={counter} onChange={(next) => set({ counter: next })} withSuspension={false} />
+      {!d.counted && (
         <details className="mb-3">
           <summary className="cursor-pointer text-sm">계수기 값 없이 직접 입력 · 혈구계산판</summary>
           <FieldRow>
             <Field label="회수한 살아 있는 세포 수">
-              <input type="number" min="1" step="any" className={inputCls} value={recovered} onChange={(e) => setRecovered(e.target.value)} />
+              <input type="number" min="1" step="any" className={inputCls} value={draft.recovered} onChange={(e) => set({ recovered: e.target.value })} />
             </Field>
             <Field label="생세포 농도 (cells/mL, 선택)">
-              <input type="number" min="0.000001" step="any" className={inputCls} value={concentration} onChange={(e) => setConcentration(e.target.value)} />
+              <input
+                type="number"
+                min="0.000001"
+                step="any"
+                className={inputCls}
+                value={draft.concentration}
+                onChange={(e) => set({ concentration: e.target.value })}
+              />
             </Field>
           </FieldRow>
           <p className="mb-3 text-xs text-fg-muted">이미 살아 있는 세포를 센 값입니다. 생존율을 다시 곱하지 않습니다.</p>
           <CellCountCalculator
             vessel={children[0].vessel}
-            onApply={(v) => {
-              setRecovered(String(v.totalCells));
-              setConcentration(String(v.cellsPerMl));
-            }}
+            onApply={(v) => set({ recovered: String(v.totalCells), concentration: String(v.cellsPerMl) })}
           />
         </details>
       )}
       {children.map((c, i) => {
-        const area = childAreas[i];
+        const area = d.childAreas[i];
         return (
           <fieldset key={i} className="mb-4 rounded-lg border border-line p-3">
             <legend className="px-1 text-sm font-medium">새 배양 {i + 1}</legend>
@@ -290,7 +487,7 @@ export function PassageForm({ line, culture, profiles, initialAt, defaultCellsPe
               value={c.use}
               onChange={(use, product) => {
                 const ml = Number(c.suspensionMl);
-                patch(i, {
+                patchChild(i, {
                   use,
                   product,
                   ...(ml > 0 && concentrationN ? { cells: String(Math.round(ml * (use?.usedWells ?? 1) * concentrationN)) } : {}),
@@ -299,7 +496,7 @@ export function PassageForm({ line, culture, profiles, initialAt, defaultCellsPe
             />
             {!c.use && (
               <Field label={`새 배양 ${i + 1} 용기 (직접 입력)`}>
-                <input required className={inputCls} value={c.vessel} onChange={(e) => patch(i, { vessel: e.target.value })} />
+                <input required className={inputCls} value={c.vessel} onChange={(e) => patchChild(i, { vessel: e.target.value })} />
               </Field>
             )}
             <FieldRow>
@@ -315,7 +512,7 @@ export function PassageForm({ line, culture, profiles, initialAt, defaultCellsPe
                 />
               </Field>
               <Field label={`접종 세포 수 (cells, 새 배양 ${i + 1} 전체)`}>
-                <ScientificInput label={`새 배양 ${i + 1} 접종 세포 수`} value={c.cells} onChange={(text) => patch(i, { cells: text, suspensionMl: '' })} />
+                <ScientificInput label={`새 배양 ${i + 1} 접종 세포 수`} value={c.cells} onChange={(text) => patchChild(i, { cells: text, suspensionMl: '' })} />
               </Field>
             </FieldRow>
             <p className="mb-2 text-xs text-fg-muted">
@@ -329,10 +526,10 @@ export function PassageForm({ line, culture, profiles, initialAt, defaultCellsPe
                   : '계수하지 않았으면 세포 수는 비워 둡니다. 현탁액 부피만으로도 분주 비율을 계산합니다.'}
             </p>
             <Field label={`새 배양 ${i + 1} 라벨 (선택)`}>
-              <input className={inputCls} value={c.label} onChange={(e) => patch(i, { label: e.target.value })} />
+              <input className={inputCls} value={c.label} onChange={(e) => patchChild(i, { label: e.target.value })} />
             </Field>
             {children.length > 1 && (
-              <button type="button" className={smallBtnCls} onClick={() => setChildren((old) => old.filter((_, j) => i !== j))}>
+              <button type="button" className={smallBtnCls} onClick={() => update((old) => ({ ...old, children: old.children.filter((_, j) => i !== j) }))}>
                 새 배양 {i + 1} 제외
               </button>
             )}
@@ -340,7 +537,12 @@ export function PassageForm({ line, culture, profiles, initialAt, defaultCellsPe
         );
       })}
       <div className="mb-3 flex flex-wrap gap-2">
-        <button type="button" className={smallBtnCls} disabled={children.length >= 24} onClick={() => setChildren((v) => [...v, newChild()])}>
+        <button
+          type="button"
+          className={smallBtnCls}
+          disabled={children.length >= 24}
+          onClick={() => update((old) => ({ ...old, children: [...old.children, newChild()] }))}
+        >
           새 배양 추가
         </button>
         <button
@@ -355,9 +557,9 @@ export function PassageForm({ line, culture, profiles, initialAt, defaultCellsPe
       </div>
       <Field label="분주 비율" hint={ratio === null ? `자동 계산: ${auto.basis}` : `직접 입력함 · 자동 계산은 ${auto.text} (${auto.basis})`}>
         <div className="flex gap-2">
-          <input className={inputCls} maxLength={120} placeholder="예: 1:5" value={ratio ?? auto.text} onChange={(e) => setRatio(e.target.value)} />
+          <input className={inputCls} maxLength={120} placeholder="예: 1:5" value={ratio ?? auto.text} onChange={(e) => set({ ratio: e.target.value })} />
           {ratio !== null && (
-            <button type="button" className={smallBtnCls} onClick={() => setRatio(null)}>
+            <button type="button" className={smallBtnCls} onClick={() => set({ ratio: null })}>
               자동값
             </button>
           )}
@@ -372,36 +574,19 @@ export function PassageForm({ line, culture, profiles, initialAt, defaultCellsPe
         <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
           {LEFTOVER_HANDLINGS.map((h) => (
             <label key={h} className="flex items-center gap-1.5">
-              <input type="radio" name="leftover" checked={leftover === h} onChange={() => setLeftover(h)} />
+              <input type="radio" name={name} checked={draft.leftover === h} onChange={() => set({ leftover: h })} />
               {LEFTOVER_LABELS[h]}
             </label>
           ))}
         </div>
-        <p className="mt-1 text-xs text-fg-muted">
-          {leftover === 'kept'
-            ? `${culture.label}은(는) 활성으로 남습니다.`
-            : restPlates.length
-              ? `고른 plate는 계대함으로 표시되고 ${culture.label}은(는) 나머지 plate로 활성으로 남습니다.${leftover === 'frozen' ? ' 남은 세포로 만든 stock이 계보에 함께 생깁니다.' : ''}`
-              : `${culture.label}은(는) 계대 완료로 종료됩니다.${leftover === 'frozen' ? ' 남은 세포로 만든 stock이 계보에 함께 생깁니다.' : ''}`}
-        </p>
-        {leftover === 'frozen' && freezePlan && (
+        {draft.leftover === 'kept' && <p className="mt-1 text-xs text-fg-muted">세포를 덜어 낸 용기는 계대 후에도 활성으로 남습니다.</p>}
+        {draft.leftover === 'frozen' && d.freezePlan && (
           <div className="mt-3">
-            <FreezeStockFields line={line} draft={freeze} onChange={setFreeze} plan={freezePlan} sourceCellsPerVial={defaultCellsPerVial} />
+            <FreezeStockFields line={line} draft={draft.freeze} onChange={(freeze) => set({ freeze })} plan={d.freezePlan} sourceCellsPerVial={defaultCellsPerVial} />
           </div>
         )}
       </fieldset>
-      <details className="mb-3">
-        <summary className="cursor-pointer text-sm">용기 변경 계산 열기 (기록에 자동 적용하지 않음)</summary>
-        <VesselChangeCalculator source={{ use: culture.vesselUse }} />
-      </details>
-      <Field label="메모">
-        <textarea className={inputCls} value={note} onChange={(e) => setNote(e.target.value)} />
-      </Field>
-      <FormError>{error}</FormError>
-      <button className={primaryBtnCls} disabled={busy}>
-        {busy ? '저장 중…' : '계대 저장'}
-      </button>
-    </form>
+    </>
   );
 }
 

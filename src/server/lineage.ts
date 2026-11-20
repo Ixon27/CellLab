@@ -782,107 +782,142 @@ interface ChildSeeding {
   volumeMl: number | null;
 }
 export function passageCulture(cultureId: string, b: LineageInput) {
+  return tx(() => passageWithin(cultureId, b));
+}
+
+/**
+ * Several passages of one culture in one step: each group is a set of plates harvested together with its own count,
+ * split and leftover handling. All groups are saved or none; a plate may be in only one group.
+ */
+export function passagePlateGroups(cultureId: string, b: LineageInput) {
   return tx(() => {
-    const parent = getCulture(cultureId);
-    if (parent.status !== 'active') throw new HttpError(409, '활성 상태의 배양만 계대할 수 있습니다');
-    if (!Array.isArray(b.children) || b.children.length < 1 || b.children.length > 24)
-      throw new HttpError(400, '자식 배양은 1–24개여야 합니다');
-    const at = eventTime(b.at);
-    const keep = flag(b.keepParent, false);
-    const freeze = b.freeze === undefined || b.freeze === null ? null : record(b.freeze, '남은 세포 동결');
-    if (freeze && keep) throw new HttpError(400, '남은 세포는 기존 용기에 두거나 동결하거나 둘 중 하나만 고르세요');
-    const count = valid(() => validateCountExtras(b.count));
-    const reagent = text(b.dissociationReagent, '계대 시약', false, 200);
-    // Which of the culture's vessels the cells came from (default: every vessel still in culture).
-    const plates = toCultureDto(parent).plates;
-    const activePlates = plates.filter((p) => p.status === 'active').map((p) => p.no);
-    const sourcePlates = b.sourcePlates === undefined || b.sourcePlates === null ? activePlates : platesFrom(b.sourcePlates, activePlates, plates.length, '계대');
-    // The hemocytometer count is of live cells, so recoveredLiveCells is that count × volume and is never multiplied by viability again.
-    const recovered = optionalNumber(b.recoveredLiveCells, '회수한 생세포 수');
-    const legacyTotal = optionalNumber(b.totalCells, '총 세포 수');
-    if (recovered !== null && legacyTotal !== null && recovered !== legacyTotal)
-      throw new HttpError(400, '회수한 생세포 수와 총 세포 수가 서로 다릅니다');
-    const totalCells = recovered ?? legacyTotal;
-    const cellsPerMl = optionalNumber(b.cellsPerMl, '세포 농도');
-    const rawChildren = b.children.map((raw) => record(raw, '자식 배양 정보'));
-    const seededGiven = rawChildren.filter((c) => c.seededCells !== undefined && c.seededCells !== null).length;
-    if (seededGiven !== 0 && seededGiven !== rawChildren.length)
-      throw new HttpError(400, '접종 세포 수는 모든 자식 배양에 입력하거나 모두 비워 두세요');
-    const seeding: (ChildSeeding | null)[] = rawChildren.map((child, i) => {
-      if (seededGiven === 0) return null;
-      const cells = numeric(child.seededCells, `${i + 1}번째 자식의 접종 세포 수`);
-      const volumeMl = optionalNumber(child.seededVolumeMl, `${i + 1}번째 자식의 접종 부피`);
-      if (volumeMl === 0) throw new HttpError(400, `${i + 1}번째 자식의 접종 부피는 0보다 커야 합니다`);
-      if (volumeMl !== null && cellsPerMl !== null) {
-        const expected = cellsPerMl * volumeMl;
-        if (Math.abs(cells - expected) > SEEDING_VOLUME_TOLERANCE * Math.max(cells, expected))
-          throw new HttpError(400, `${i + 1}번째 자식의 접종 세포 수가 부피 × 농도와 맞지 않습니다`);
+    if (!Array.isArray(b.groups) || b.groups.length < 1 || b.groups.length > 24) throw new HttpError(400, 'plate 묶음은 1–24개여야 합니다');
+    const seen = new Set<number>();
+    const results = b.groups.map((raw, i) => {
+      const group = record(raw, `${i + 1}번째 plate 묶음`);
+      if (!Array.isArray(group.sourcePlates) || !group.sourcePlates.length) throw new HttpError(400, `${i + 1}번째 묶음의 plate를 고르세요`);
+      for (const no of group.sourcePlates) {
+        if (seen.has(Number(no))) throw new HttpError(400, `plate ${no}을(를) 두 묶음에 넣을 수 없습니다`);
+        seen.add(Number(no));
       }
-      return { cells, volumeMl };
-    });
-    let seededTotal: number | null = null;
-    if (seededGiven > 0) {
-      if (recovered === null && legacyTotal === null) throw new HttpError(400, '접종 세포 수를 기록하려면 회수한 생세포 수를 입력하세요');
-      seededTotal = valid(() => passageConservation(totalCells!, seeding.map((s) => s!.cells))).seededCells;
-    }
-    const parentLabel = parent.label;
-    const line = getLineRow(parent.cell_line_id);
-    const allWarnings = warnings(parent.cell_line_id, parent.passage + 1);
-    const children = rawChildren.map((child, i) => {
-      const spec = vesselSpec(child);
-      allWarnings.push(...(spec.resolved?.warnings ?? []));
-      const created = insertCulture(
-        parent.cell_line_id,
-        parent.passage + 1,
-        spec,
-        parent.profile_id,
-        at,
-        text(child.label, '라벨') || `${line.name}-P${parent.passage + 1}-${String.fromCharCode(65 + i)}`,
-        cultureId,
-      );
-      const s = seeding[i];
-      if (s) {
-        const area = useArea(spec.resolved);
-        const extra: Record<string, string> = { seedingCells: String(s.cells), seedingParent: parentLabel };
-        if (s.volumeMl !== null) extra.seedingVolumeMl = String(s.volumeMl);
-        if (area) extra.seedingDensityPerCm2 = String(s.cells / area);
-        insertLog(created.id, { at, type: 'note', note: `${parentLabel}에서 계대 · 접종 ${Math.round(s.cells).toLocaleString('ko-KR')} cells`, extra }, { internal: true });
+      try {
+        return passageWithin(cultureId, group);
+      } catch (e) {
+        if (e instanceof HttpError) throw new HttpError(e.status, `plate ${group.sourcePlates.join(', ')}: ${e.message}`);
+        throw e;
       }
-      return created;
     });
-    const extra: Record<string, string> = {
-      splitRatio: text(b.splitRatio, '분주 비율'),
-      childCount: String(children.length),
-      childCultureIds: children.map((c) => c.id).join(','),
-      leftoverHandling: freeze ? 'frozen' : keep ? 'kept' : 'discarded',
-      ...count,
-    };
-    if (reagent) extra.dissociationReagent = reagent;
-    if (seededTotal !== null) extra.seededCells = String(seededTotal);
-    if (plates.length > 1) extra.sourcePlates = sourcePlates.join(',');
-    // Leftover cells frozen in the same step: a freeze record and stock from the parent, before it is marked split.
-    let frozenLot: LotDto | null = null;
-    if (freeze) {
-      const leftover = totalCells === null ? null : totalCells - (seededTotal ?? 0);
-      const planned = numeric(record(freeze.plan, '동결 계획').recoveredLiveCells, '동결할 세포 수');
-      if (leftover !== null && planned > leftover * (1 + 1e-9) + 1e-6)
-        throw new HttpError(400, `동결할 세포 수가 접종하고 남은 세포(${Math.round(leftover).toLocaleString('ko-KR')})보다 많습니다`);
-      frozenLot = freezeWithin(cultureId, { ...freeze, at, endCulture: false }).lot;
-    }
-    const passageLog = insertLog(
-      cultureId,
-      { at, type: 'passage', confluencyPct: b.confluencyPct, cellsPerMl, viabilityPct: b.viabilityPct, totalCells, note: b.note, mycoplasma: null, extra },
-      { internal: true },
-    );
-    attachProtocolRun([passageLog.id], cultureId, b.protocolRun);
-    // Passaged vessels leave the culture; it ends only when no vessel is left (or all cells stay put with keepParent).
-    if (!keep) {
-      const mark = db.prepare("INSERT INTO culture_plates(culture_id,plate_no,status,at,log_id) VALUES(?,?,'passaged',?,?)");
-      if (plates.length > 1) for (const no of sourcePlates) mark.run(cultureId, no, at, passageLog.id);
-      if (activePlates.every((no) => sourcePlates.includes(no))) db.prepare("UPDATE cultures SET status='split',ended_at=? WHERE id=?").run(at, cultureId);
-    }
-    return { parent: toCultureDto(getCulture(cultureId)), children, lot: frozenLot, warnings: allWarnings };
+    return { results, warnings: [...new Set(results.flatMap((r) => r.warnings))] };
   });
+}
+
+/** One passage record; runs inside the caller's transaction. */
+function passageWithin(cultureId: string, b: LineageInput) {
+  const parent = getCulture(cultureId);
+  if (parent.status !== 'active') throw new HttpError(409, '활성 상태의 배양만 계대할 수 있습니다');
+  if (!Array.isArray(b.children) || b.children.length < 1 || b.children.length > 24)
+    throw new HttpError(400, '자식 배양은 1–24개여야 합니다');
+  const at = eventTime(b.at);
+  const keep = flag(b.keepParent, false);
+  const freeze = b.freeze === undefined || b.freeze === null ? null : record(b.freeze, '남은 세포 동결');
+  if (freeze && keep) throw new HttpError(400, '남은 세포는 기존 용기에 두거나 동결하거나 둘 중 하나만 고르세요');
+  const count = valid(() => validateCountExtras(b.count));
+  const reagent = text(b.dissociationReagent, '계대 시약', false, 200);
+  // Which of the culture's vessels the cells came from (default: every vessel still in culture).
+  const plates = toCultureDto(parent).plates;
+  const activePlates = plates.filter((p) => p.status === 'active').map((p) => p.no);
+  const sourcePlates = b.sourcePlates === undefined || b.sourcePlates === null ? activePlates : platesFrom(b.sourcePlates, activePlates, plates.length, '계대');
+  // The hemocytometer count is of live cells, so recoveredLiveCells is that count × volume and is never multiplied by viability again.
+  const recovered = optionalNumber(b.recoveredLiveCells, '회수한 생세포 수');
+  const legacyTotal = optionalNumber(b.totalCells, '총 세포 수');
+  if (recovered !== null && legacyTotal !== null && recovered !== legacyTotal)
+    throw new HttpError(400, '회수한 생세포 수와 총 세포 수가 서로 다릅니다');
+  const totalCells = recovered ?? legacyTotal;
+  const cellsPerMl = optionalNumber(b.cellsPerMl, '세포 농도');
+  const rawChildren = b.children.map((raw) => record(raw, '자식 배양 정보'));
+  const seededGiven = rawChildren.filter((c) => c.seededCells !== undefined && c.seededCells !== null).length;
+  if (seededGiven !== 0 && seededGiven !== rawChildren.length)
+    throw new HttpError(400, '접종 세포 수는 모든 자식 배양에 입력하거나 모두 비워 두세요');
+  const seeding: (ChildSeeding | null)[] = rawChildren.map((child, i) => {
+    if (seededGiven === 0) return null;
+    const cells = numeric(child.seededCells, `${i + 1}번째 자식의 접종 세포 수`);
+    const volumeMl = optionalNumber(child.seededVolumeMl, `${i + 1}번째 자식의 접종 부피`);
+    if (volumeMl === 0) throw new HttpError(400, `${i + 1}번째 자식의 접종 부피는 0보다 커야 합니다`);
+    if (volumeMl !== null && cellsPerMl !== null) {
+      const expected = cellsPerMl * volumeMl;
+      if (Math.abs(cells - expected) > SEEDING_VOLUME_TOLERANCE * Math.max(cells, expected))
+        throw new HttpError(400, `${i + 1}번째 자식의 접종 세포 수가 부피 × 농도와 맞지 않습니다`);
+    }
+    return { cells, volumeMl };
+  });
+  let seededTotal: number | null = null;
+  if (seededGiven > 0) {
+    if (recovered === null && legacyTotal === null) throw new HttpError(400, '접종 세포 수를 기록하려면 회수한 생세포 수를 입력하세요');
+    seededTotal = valid(() => passageConservation(totalCells!, seeding.map((s) => s!.cells))).seededCells;
+  }
+  const parentLabel = parent.label;
+  const line = getLineRow(parent.cell_line_id);
+  const allWarnings = warnings(parent.cell_line_id, parent.passage + 1);
+  // Earlier passages of other plates already used some letters; default labels never repeat a sibling's.
+  const usedLabels = new Set(
+    (db.prepare('SELECT label FROM cultures WHERE parent_culture_id=?').all(cultureId) as { label: string }[]).map((r) => r.label.toLowerCase()),
+  );
+  const defaultLabel = () => {
+    for (let k = 0; ; k++) {
+      // A…Z, then AA, AB, …
+      const letter = (k < 26 ? '' : String.fromCharCode(64 + Math.floor(k / 26))) + String.fromCharCode(65 + (k % 26));
+      const label = `${line.name}-P${parent.passage + 1}-${letter}`;
+      if (!usedLabels.has(label.toLowerCase())) return label;
+    }
+  };
+  const children = rawChildren.map((child, i) => {
+    const spec = vesselSpec(child);
+    allWarnings.push(...(spec.resolved?.warnings ?? []));
+    const label = text(child.label, '라벨') || defaultLabel();
+    usedLabels.add(label.toLowerCase());
+    const created = insertCulture(parent.cell_line_id, parent.passage + 1, spec, parent.profile_id, at, label, cultureId);
+    const s = seeding[i];
+    if (s) {
+      const area = useArea(spec.resolved);
+      const extra: Record<string, string> = { seedingCells: String(s.cells), seedingParent: parentLabel };
+      if (s.volumeMl !== null) extra.seedingVolumeMl = String(s.volumeMl);
+      if (area) extra.seedingDensityPerCm2 = String(s.cells / area);
+      insertLog(created.id, { at, type: 'note', note: `${parentLabel}에서 계대 · 접종 ${Math.round(s.cells).toLocaleString('ko-KR')} cells`, extra }, { internal: true });
+    }
+    return created;
+  });
+  const extra: Record<string, string> = {
+    splitRatio: text(b.splitRatio, '분주 비율'),
+    childCount: String(children.length),
+    childCultureIds: children.map((c) => c.id).join(','),
+    leftoverHandling: freeze ? 'frozen' : keep ? 'kept' : 'discarded',
+    ...count,
+  };
+  if (reagent) extra.dissociationReagent = reagent;
+  if (seededTotal !== null) extra.seededCells = String(seededTotal);
+  if (plates.length > 1) extra.sourcePlates = sourcePlates.join(',');
+  // Leftover cells frozen in the same step: a freeze record and stock from the parent, before it is marked split.
+  let frozenLot: LotDto | null = null;
+  if (freeze) {
+    const leftover = totalCells === null ? null : totalCells - (seededTotal ?? 0);
+    const planned = numeric(record(freeze.plan, '동결 계획').recoveredLiveCells, '동결할 세포 수');
+    if (leftover !== null && planned > leftover * (1 + 1e-9) + 1e-6)
+      throw new HttpError(400, `동결할 세포 수가 접종하고 남은 세포(${Math.round(leftover).toLocaleString('ko-KR')})보다 많습니다`);
+    frozenLot = freezeWithin(cultureId, { ...freeze, at, endCulture: false }).lot;
+  }
+  const passageLog = insertLog(
+    cultureId,
+    { at, type: 'passage', confluencyPct: b.confluencyPct, cellsPerMl, viabilityPct: b.viabilityPct, totalCells, note: b.note, mycoplasma: null, extra },
+    { internal: true },
+  );
+  attachProtocolRun([passageLog.id], cultureId, b.protocolRun);
+  // Passaged vessels leave the culture; it ends only when no vessel is left (or all cells stay put with keepParent).
+  if (!keep) {
+    const mark = db.prepare("INSERT INTO culture_plates(culture_id,plate_no,status,at,log_id) VALUES(?,?,'passaged',?,?)");
+    if (plates.length > 1) for (const no of sourcePlates) mark.run(cultureId, no, at, passageLog.id);
+    if (activePlates.every((no) => sourcePlates.includes(no))) db.prepare("UPDATE cultures SET status='split',ended_at=? WHERE id=?").run(at, cultureId);
+  }
+  return { parent: toCultureDto(getCulture(cultureId)), children, lot: frozenLot, warnings: allWarnings };
 }
 
 /** Validated, de-duplicated plate numbers that are all still active. */

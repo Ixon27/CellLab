@@ -340,4 +340,36 @@ describe('여러 dish로 나뉜 배양의 plate별 계대·폐기', () => {
     const restored = (await call<{ cultures: CultureDto[] }>('/api/cell-lines/tcmk')).data.cultures.find((c) => c.id === parent.id)!;
     expect(restored.plates.map((p) => p.status)).toEqual(['active', 'active', 'active']);
   });
+
+  it('plate별 계대는 plate마다 기록·새 배양을 만들고, 한 묶음이라도 틀리면 아무것도 저장하지 않는다', async () => {
+    const lot = await receive(1);
+    const [parent] = await thaw(lot, [{ vessel: 'T75' }]);
+    const product = (
+      await call<{ id: string }>('/api/lab-products/vessels', 'POST', { label: '100 mm dish', format: '100 mm dish', wellsPerUnit: 1, areaCm2PerWell: 55, sourceLabel: '테스트' })
+    ).data;
+    expect((await call(`/api/cultures/${parent.id}`, 'PUT', { vesselUse: { vesselProductId: product.id, usedWells: 3, mediumMl: 30 } })).status).toBe(200);
+    const url = `/api/cultures/${parent.id}/passage-groups`;
+    // Plate 3 would seed more cells than it gave: the whole step is rejected, plate 1 included.
+    const bad = await call<{ error: string }>(url, 'POST', {
+      groups: [
+        { at, sourcePlates: [1], splitRatio: '1:3', children: [{ vessel: 'T25' }] },
+        { at, sourcePlates: [3], recoveredLiveCells: 100, children: [{ vessel: 'T25', seededCells: 500 }] },
+      ],
+    });
+    expect(bad.status).toBe(400);
+    expect(bad.data.error).toMatch(/^plate 3: /);
+    expect((await logsOf(parent.id)).filter((l) => l.type === 'passage')).toHaveLength(0);
+    expect((await call(url, 'POST', { groups: [{ at, sourcePlates: [1], children: [{ vessel: 'T25' }] }, { at, sourcePlates: [1, 2], children: [{ vessel: 'T25' }] }] })).status).toBe(400);
+
+    const ok = await call<{ results: { children: CultureDto[]; parent: CultureDto }[] }>(url, 'POST', {
+      groups: [1, 2, 3].map((no) => ({ at, sourcePlates: [no], splitRatio: no === 3 ? '1:5' : '1:3', children: [{ vessel: 'T25' }] })),
+    });
+    expect(ok.status).toBe(201);
+    expect(ok.data.results.flatMap((r) => r.children.map((c) => c.label))).toEqual(['TCMK-1-P45-A', 'TCMK-1-P45-B', 'TCMK-1-P45-C']);
+    expect(ok.data.results.at(-1)!.parent).toMatchObject({ status: 'split' });
+    const graph = (await call<LineageGraph>('/api/cell-lines/tcmk/lineage')).data;
+    expect(ok.data.results.map((r) => graph.edges.find((e) => e.target === r.children[0].id)?.sourcePlates)).toEqual([[1], [2], [3]]);
+    const ratios = (await logsOf(parent.id)).filter((l) => l.type === 'passage').map((l) => l.passage?.splitRatio);
+    expect(ratios.sort()).toEqual(['1:3', '1:3', '1:5']);
+  });
 });
