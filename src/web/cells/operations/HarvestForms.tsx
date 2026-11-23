@@ -51,8 +51,9 @@ interface Child {
   cells: string;
   /** Suspension volume actually pipetted, when entered; converted to cells with the live concentration. */
   suspensionMl: string;
+  input: 'target' | 'cells' | 'volume';
 }
-const newChild = (): Child => ({ vessel: '', label: '', use: null, product: null, cells: '', suspensionMl: '' });
+const newChild = (): Child => ({ vessel: '', label: '', use: null, product: null, cells: '', suspensionMl: '', input: 'target' });
 const unitsOf = (c: Child) => c.use?.usedWells ?? 1;
 
 /** Inputs of one passage record. Plate-by-plate passages keep one per plate: the common one unless that plate differs. */
@@ -61,6 +62,8 @@ interface PassageDraft {
   counter: CounterDraft;
   recovered: string;
   concentration: string;
+  manualViability: number | null;
+  targetDensity: string;
   children: Child[];
   ratio: string | null;
   leftover: LeftoverHandling;
@@ -70,14 +73,30 @@ interface PassageDraft {
 /** Counts, the 1:N split and the leftover freeze plan of one draft; `plateCount` = how many plates the cells came from. */
 function derivePassage(draft: PassageDraft, culture: CultureDto, plateCount: number, line: CellLineDto) {
   const { counted, problem: counterProblem } = readCounter(draft.counter);
-  const recoveredN = counted?.liveCells ?? numberOrNull(draft.recovered);
-  const concentrationN = counted?.liveCellsPerMl ?? numberOrNull(draft.concentration);
-  const { children } = draft;
+  const concentrationN = counted ? counted.liveCellsPerMl : numberOrNull(draft.concentration);
+  const suspensionN = numberOrNull(draft.counter.countSuspensionMl);
+  const recoveredN = counted ? counted.liveCells : numberOrNull(draft.recovered) ??
+    (concentrationN !== null && suspensionN !== null ? concentrationN * suspensionN : null);
+  const viabilityPct = counted ? counted.viabilityPct : draft.manualViability;
+  const childAreas = draft.children.map((c) => (c.product && c.use ? vesselArea(c.product, c.use.usedWells) : null));
+  const density = numberOrNull(draft.targetDensity);
+  const children = draft.children.map((c, i) => {
+    const units = unitsOf(c);
+    if (c.input === 'volume') {
+      return { ...c, cells: concentrationN && Number(c.suspensionMl) > 0 ? String(Math.round(Number(c.suspensionMl) * units * concentrationN)) : '' };
+    }
+    const area = childAreas[i];
+    const cells = c.input === 'target'
+      ? density && density > 0 && area && concentrationN && recoveredN !== null ? String(Math.round(density * area)) : ''
+      : c.cells;
+    const suspensionMl = concentrationN && Number(cells) > 0 ? String(Number(cells) / (concentrationN * units)) : '';
+    return { ...c, cells, suspensionMl };
+  });
+  const volumeConflict = children.some((c) => c.use?.mediumMl != null && Number(c.suspensionMl) * unitsOf(c) > c.use.mediumMl + 1e-9);
   const seededKnown = children.every((c) => c.cells.trim() !== '');
-  const seeded = children.reduce((s, c) => s + (Number(c.cells) || 0), 0);
+  const seeded = children.reduce((sum, c) => sum + (Number(c.cells) || 0), 0);
   const leftoverCells = recoveredN === null || !seededKnown ? null : Math.max(0, recoveredN - seeded);
   // The pellet is always resuspended; each new dish gets the same volume of that suspension.
-  const suspensionN = numberOrNull(draft.counter.countSuspensionMl);
   const pipettedKnown = children.every((c) => Number(c.suspensionMl) > 0);
   const pipetted = children.reduce((s, c) => s + (Number(c.suspensionMl) || 0) * unitsOf(c), 0);
 
@@ -87,7 +106,6 @@ function derivePassage(draft: PassageDraft, culture: CultureDto, plateCount: num
   // Only the plates the cells came from count as the area they grew on.
   const fullArea = source ? vesselArea(source.product, source.usedWells) : null;
   const sourceArea = fullArea === null ? null : fullArea * (multiPlate ? plateCount / culture.plates.length : 1);
-  const childAreas = children.map((c) => (c.product && c.use ? vesselArea(c.product, c.use.usedWells) : null));
   const areaKnown = sourceArea !== null && childAreas.every((a) => a !== null);
   const before = areaKnown ? sourceArea : multiPlate ? Math.max(1, plateCount) : (source?.usedWells ?? 1);
   const after = areaKnown ? childAreas.map((a) => a ?? 0) : children.map(unitsOf);
@@ -110,6 +128,9 @@ function derivePassage(draft: PassageDraft, culture: CultureDto, plateCount: num
     draft.leftover === 'frozen' ? planFreeze({ availableCells: leftoverCells, suspensionCellsPerMl: concentrationN, draft: draft.freeze, line }) : null;
   return {
     counted,
+    viabilityPct,
+    children,
+    volumeConflict,
     counterProblem,
     recoveredN,
     concentrationN,
@@ -130,7 +151,8 @@ type PassageDerived = ReturnType<typeof derivePassage>;
 /** The per-record part of a passage request; throws the first input problem. */
 function passageRequest(draft: PassageDraft, d: PassageDerived) {
   if (d.counterProblem) throw new Error(d.counterProblem);
-  const { children } = draft;
+  if (d.volumeConflict) throw new Error('현탁액 부피가 최종 배양 부피보다 큽니다. 목표·현탁액 농도·최종 부피를 확인하세요');
+  const { children } = d;
   const filled = children.filter((c) => c.cells.trim()).length;
   if (filled && !d.seededKnown) throw new Error('접종 세포 수는 모든 새 배양에 넣거나 모두 비워 두세요');
   if (children.some((c) => c.cells.trim() && !(Number(c.cells) > 0))) throw new Error('접종 세포 수는 0보다 커야 합니다');
@@ -149,7 +171,7 @@ function passageRequest(draft: PassageDraft, d: PassageDerived) {
   const { concentrationN } = d;
   return {
     confluencyPct: optionalNumber(draft.confluency, 'Confluency'),
-    viabilityPct: d.counted?.viabilityPct ?? null,
+    viabilityPct: d.viabilityPct,
     count: d.counted?.extras ?? (d.suspensionN ? { countSuspensionMl: d.suspensionN } : null),
     recoveredLiveCells: d.recoveredN,
     cellsPerMl: concentrationN,
@@ -159,7 +181,7 @@ function passageRequest(draft: PassageDraft, d: PassageDerived) {
       vesselUse: c.use,
       label: c.label,
       seededCells: d.seededKnown ? Number(c.cells) : null,
-      seededVolumeMl: d.seededKnown && concentrationN && concentrationN > 0 ? Number(c.cells) / concentrationN : null,
+      seededVolumeMl: Number(c.suspensionMl) > 0 ? Number(c.suspensionMl) * unitsOf(c) : null,
     })),
     keepParent: draft.leftover === 'kept',
     freeze,
@@ -179,10 +201,12 @@ export function PassageForm({ line, culture, profiles, initialAt, defaultCellsPe
     counter: emptyCounter(),
     recovered: '',
     concentration: '',
+    manualViability: null,
+    targetDensity: line.passageCellsPerCm2 === null ? '' : String(line.passageCellsPerCm2),
     children: [newChild()],
     ratio: null,
     leftover: 'discarded',
-    freeze: initialFreezeDraft(line, defaultCellsPerVial),
+    freeze: initialFreezeDraft(defaultCellsPerVial),
   }));
   const activePlates = culture.plates.filter((p) => p.status === 'active').map((p) => p.no);
   const [sourcePlates, setSourcePlates] = useState<number[]>(activePlates);
@@ -362,7 +386,6 @@ export function PassageForm({ line, culture, profiles, initialAt, defaultCellsPe
             update={updateDraft}
             d={derivePassage(editDraft, culture, byPlate ? 1 : sourcePlates.length, line)}
             line={line}
-            defaultCellsPerVial={defaultCellsPerVial}
           />
         </>
       ) : (
@@ -392,22 +415,21 @@ function PassageDraftFields({
   update,
   d,
   line,
-  defaultCellsPerVial,
   name,
 }: {
   draft: PassageDraft;
   update(fn: (old: PassageDraft) => PassageDraft): void;
   d: PassageDerived;
   line: CellLineDto;
-  defaultCellsPerVial?: number | null;
   /** Radio group name, unique per draft. */
   name: string;
 }) {
   const set = (patch: Partial<PassageDraft>) => update((old) => ({ ...old, ...patch }));
   const patchChild = (i: number, values: Partial<Child>) =>
     update((old) => ({ ...old, children: old.children.map((v, j) => (i === j ? { ...v, ...values } : v)) }));
-  const { children, counter, ratio } = draft;
-  const { recoveredN, concentrationN, suspensionN, seededKnown, seeded, leftoverCells, factor, auto } = d;
+  const { counter, ratio } = draft;
+  const { children } = d;
+  const { recoveredN, suspensionN, seededKnown, seeded, leftoverCells, factor, auto } = d;
 
   /** Per dish: the suspension volume (and, when counted, the cells) for the chosen 1:N split. */
   function fillByRatio() {
@@ -418,16 +440,14 @@ function PassageDraftFields({
       ratio: old.ratio ?? auto.text,
       children: old.children.map((c, i) => ({
         ...c,
+        input: suspensionN && (recoveredN === null || d.concentrationN) ? 'volume' : 'cells',
         suspensionMl: suspensionN ? String(Number(((suspensionN * shares[i]) / unitsOf(c)).toPrecision(4))) : c.suspensionMl,
         cells: recoveredN !== null ? String(Math.floor(recoveredN * shares[i])) : c.cells,
       })),
     }));
   }
-  /** Same suspension volume into every dish of a new culture; with a live concentration it gives the cells too. */
   function setPerDishMl(i: number, text: string) {
-    const ml = Number(text);
-    const units = unitsOf(children[i]);
-    patchChild(i, { suspensionMl: text, cells: text.trim() && ml > 0 && concentrationN ? String(Math.round(ml * units * concentrationN)) : '' });
+    patchChild(i, { input: 'volume', suspensionMl: text });
   }
   return (
     <>
@@ -467,32 +487,33 @@ function PassageDraftFields({
                 step="any"
                 className={inputCls}
                 value={draft.concentration}
-                onChange={(e) => set({ concentration: e.target.value })}
+                onChange={(e) => set({ concentration: e.target.value, manualViability: null })}
               />
             </Field>
           </FieldRow>
           <p className="mb-3 text-xs text-fg-muted">이미 살아 있는 세포를 센 값입니다. 생존율을 다시 곱하지 않습니다.</p>
           <CellCountCalculator
-            vessel={children[0].vessel}
-            onApply={(v) => set({ recovered: String(v.totalCells), concentration: String(v.cellsPerMl) })}
+            volume={counter.countSuspensionMl}
+            onApply={(v) => set({ recovered: '', concentration: String(v.cellsPerMl), manualViability: v.viabilityPct })}
           />
         </details>
       )}
+      <Field label="계대 목표 파종 밀도 (cells/cm²)" hint="세포주 정보의 기본값입니다. 이번 계대만 바꾸거나 비울 수 있습니다.">
+        <ScientificInput label="계대 목표 파종 밀도" value={draft.targetDensity} onChange={(targetDensity) => set({ targetDensity })} />
+      </Field>
       {children.map((c, i) => {
         const area = d.childAreas[i];
+        const units = unitsOf(c);
+        const finalMl = c.use?.mediumMl == null ? null : c.use.mediumMl / units;
+        const suspensionMl = numberOrNull(c.suspensionMl);
+        const addedMl = finalMl === null || !suspensionMl ? null : finalMl - suspensionMl;
         return (
           <fieldset key={i} className="mb-4 rounded-lg border border-line p-3">
             <legend className="px-1 text-sm font-medium">새 배양 {i + 1}</legend>
             <VesselUsePicker
               value={c.use}
-              onChange={(use, product) => {
-                const ml = Number(c.suspensionMl);
-                patchChild(i, {
-                  use,
-                  product,
-                  ...(ml > 0 && concentrationN ? { cells: String(Math.round(ml * (use?.usedWells ?? 1) * concentrationN)) } : {}),
-                });
-              }}
+              finalVolume
+              onChange={(use, product) => patchChild(i, { use, product })}
             />
             {!c.use && (
               <Field label={`새 배양 ${i + 1} 용기 (직접 입력)`}>
@@ -500,31 +521,39 @@ function PassageDraftFields({
               </Field>
             )}
             <FieldRow>
-              <Field label="dish 1개당 넣은 현탁액 (mL)">
+              <Field label={`${c.product && c.product.wellsPerUnit > 1 ? 'well' : 'dish'} 1개당 넣을 현탁액 (mL)`}>
                 <input
                   type="number"
                   min="0"
                   step="any"
                   className={inputCls}
                   placeholder="예: 0.2"
-                  value={c.suspensionMl}
+                  value={c.input === 'volume' || suspensionMl === null ? c.suspensionMl : String(Number(suspensionMl.toPrecision(6)))}
                   onChange={(e) => setPerDishMl(i, e.target.value)}
                 />
               </Field>
               <Field label={`접종 세포 수 (cells, 새 배양 ${i + 1} 전체)`}>
-                <ScientificInput label={`새 배양 ${i + 1} 접종 세포 수`} value={c.cells} onChange={(text) => patchChild(i, { cells: text, suspensionMl: '' })} />
+                <ScientificInput label={`새 배양 ${i + 1} 접종 세포 수`} value={c.cells} onChange={(text) => patchChild(i, { input: 'cells', cells: text })} />
               </Field>
             </FieldRow>
             <p className="mb-2 text-xs text-fg-muted">
-              {Number(c.suspensionMl) > 0 && unitsOf(c) > 1 && `현탁액 합계 ${Number((Number(c.suspensionMl) * unitsOf(c)).toPrecision(4))} mL (${unitsOf(c)}개) · `}
-              {c.cells
-                ? `${concentrationN ? 'Live cell concentration × 현탁액으로 계산 · ' : ''}밀도 ${area ? `${formatCount(Number(c.cells) / area)} cells/cm²` : '면적 미확인'}${
-                    unitsOf(c) > 1 ? ` · dish당 ${formatCount(Number(c.cells) / unitsOf(c))} cells` : ''
-                  }`
-                : concentrationN
-                  ? '현탁액 부피를 넣으면 세포 수를 계산합니다.'
-                  : '계수하지 않았으면 세포 수는 비워 둡니다. 현탁액 부피만으로도 분주 비율을 계산합니다.'}
+              {c.input === 'target'
+                ? !draft.targetDensity.trim()
+                  ? '목표 밀도, 접종 세포 수, 또는 현탁액 부피를 넣으세요.'
+                  : area === null ? '면적이 등록된 용기를 고르면 목표 접종량을 계산합니다.'
+                  : !c.cells ? '목표 부피를 계산하려면 계수값을 넣으세요.'
+                  : '목표 밀도 × 새 배양 총면적'
+                : c.input === 'cells' ? '입력한 세포 수 기준' : '입력한 현탁액 기준'}
+              {c.cells && ` · ${formatCount(Number(c.cells) / units)} cells/개${area ? ` · ${formatCount(Number(c.cells) / area)} cells/cm²` : ''}`}
+              {suspensionMl !== null && suspensionMl > 0 && ` · 현탁액 합계 ${Number((suspensionMl * units).toPrecision(6))} mL`}
+              {addedMl !== null && addedMl >= -1e-9 && ` · 1개당 배지 ${Number(Math.max(0, addedMl).toPrecision(6))} mL + 현탁액 = 최종 ${Number(finalMl!.toPrecision(6))} mL`}
             </p>
+            {addedMl !== null && addedMl < -1e-9 && <p className="mb-2 text-sm text-danger">필요한 현탁액이 최종 배양 부피를 넘습니다.</p>}
+            {c.input !== 'target' && draft.targetDensity.trim() && (
+              <button type="button" className={`${smallBtnCls} mb-2`} onClick={() => { patchChild(i, { input: 'target' }); set({ ratio: null }); }}>
+                목표 밀도로 계산
+              </button>
+            )}
             <Field label={`새 배양 ${i + 1} 라벨 (선택)`}>
               <input className={inputCls} value={c.label} onChange={(e) => patchChild(i, { label: e.target.value })} />
             </Field>
@@ -582,7 +611,7 @@ function PassageDraftFields({
         {draft.leftover === 'kept' && <p className="mt-1 text-xs text-fg-muted">세포를 덜어 낸 용기는 계대 후에도 활성으로 남습니다.</p>}
         {draft.leftover === 'frozen' && d.freezePlan && (
           <div className="mt-3">
-            <FreezeStockFields line={line} draft={draft.freeze} onChange={(freeze) => set({ freeze })} plan={d.freezePlan} sourceCellsPerVial={defaultCellsPerVial} />
+            <FreezeStockFields line={line} draft={draft.freeze} onChange={(freeze) => set({ freeze })} plan={d.freezePlan} />
           </div>
         )}
       </fieldset>
@@ -601,8 +630,9 @@ export function FreezeForm({ line, culture, profiles, initialAt, defaultCellsPer
   const [counter, setCounter] = useState<CounterDraft>(emptyCounter);
   const [recovered, setRecovered] = useState('');
   const [suspension, setSuspension] = useState('');
+  const [manualViability, setManualViability] = useState<number | null>(null);
   const [retained, setRetained] = useState('0');
-  const [stock, setStock] = useState(() => initialFreezeDraft(line, defaultCellsPerVial));
+  const [stock, setStock] = useState(() => initialFreezeDraft(defaultCellsPerVial));
   const [end, setEnd] = useState(false);
   const [testVials, setTestVials] = useState('');
   const [testAt, setTestAt] = useState('');
@@ -614,8 +644,10 @@ export function FreezeForm({ line, culture, profiles, initialAt, defaultCellsPer
   const [error, setError] = useState<string | null>(null);
   const profile = executionProfile(profiles, culture).profile;
   const { counted, problem: counterProblem } = readCounter(counter);
-  const recoveredN = counted?.liveCells ?? numberOrNull(recovered);
-  const suspensionN = counted?.liveCellsPerMl ?? numberOrNull(suspension);
+  const suspensionN = counted ? counted.liveCellsPerMl : numberOrNull(suspension);
+  const volume = numberOrNull(counter.countSuspensionMl);
+  const recoveredN = counted ? counted.liveCells : numberOrNull(recovered) ?? (suspensionN !== null && volume !== null ? suspensionN * volume : null);
+  const viabilityPct = counted ? counted.viabilityPct : manualViability;
   const retainedN = numberOrNull(retained) ?? 0;
   const plan = planFreeze({ availableCells: recoveredN, retainedCells: retainedN, suspensionCellsPerMl: suspensionN, draft: stock, line });
   async function save() {
@@ -631,7 +663,7 @@ export function FreezeForm({ line, culture, profiles, initialAt, defaultCellsPer
         json: {
           at: isoFromInput(at),
           confluencyPct: optionalNumber(confluency, 'Confluency'),
-          viabilityPct: counted?.viabilityPct ?? null,
+          viabilityPct,
           cellsPerMl: suspensionN,
           count: counted?.extras ?? (numberOrNull(counter.countSuspensionMl) ? { countSuspensionMl: Number(counter.countSuspensionMl) } : null),
           ...request,
@@ -688,15 +720,23 @@ export function FreezeForm({ line, culture, profiles, initialAt, defaultCellsPer
         <CellCounterFields value={counter} onChange={setCounter} withSuspension={false} />
         {!counted && (
           <details className="mb-3">
-            <summary className="cursor-pointer text-sm">계수기 값 없이 직접 입력</summary>
+            <summary className="cursor-pointer text-sm">계수기 값 없이 직접 입력 · 혈구계산판</summary>
             <FieldRow>
               <Field label="회수한 살아 있는 세포 수">
                 <input type="number" min="0" step="any" className={inputCls} value={recovered} onChange={(e) => setRecovered(e.target.value)} />
               </Field>
               <Field label="현탁액 생세포 농도 (cells/mL, 선택)">
-                <input type="number" min="0" step="any" className={inputCls} value={suspension} onChange={(e) => setSuspension(e.target.value)} />
+                <input type="number" min="0" step="any" className={inputCls} value={suspension} onChange={(e) => { setSuspension(e.target.value); setManualViability(null); }} />
               </Field>
             </FieldRow>
+            <CellCountCalculator
+              volume={counter.countSuspensionMl}
+              onApply={(v) => {
+                setRecovered('');
+                setSuspension(String(v.cellsPerMl));
+                setManualViability(v.viabilityPct);
+              }}
+            />
           </details>
         )}
         <Field label="계속 배양할 세포 수" hint="동결하지 않고 남겨 키울 세포. 없으면 0">
@@ -709,10 +749,10 @@ export function FreezeForm({ line, culture, profiles, initialAt, defaultCellsPer
         </legend>
         <p className="op-section-total">
           회수 생세포 <strong>{recoveredN === null ? '—' : `${formatCount(recoveredN)} cells`}</strong>
-          {counted?.viabilityPct != null && ` · 생존율 ${counted.viabilityPct}%`}
+          {viabilityPct !== null && ` · 생존율 ${viabilityPct}%`}
           {retainedN > 0 && recoveredN !== null && ` · 동결에 쓸 수 있는 세포 ${formatCount(Math.max(0, recoveredN - retainedN))}`}
         </p>
-        <FreezeStockFields line={line} draft={stock} onChange={setStock} plan={plan} retainedCells={retainedN} sourceCellsPerVial={defaultCellsPerVial} />
+        <FreezeStockFields line={line} draft={stock} onChange={setStock} plan={plan} retainedCells={retainedN} />
       </fieldset>
       <fieldset className="op-section">
         <legend>

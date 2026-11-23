@@ -22,6 +22,7 @@ export type LineForm = Pick<
   | 'biosafety'
   | 'maxPassage'
   | 'stockCellsPerMl'
+  | 'passageCellsPerCm2'
   | 'tags'
   | 'notes'
   | 'synonyms'
@@ -44,6 +45,7 @@ export const emptyLine: LineForm = {
   biosafety: null,
   maxPassage: null,
   stockCellsPerMl: null,
+  passageCellsPerCm2: null,
   tags: [],
   notes: '',
   synonyms: [],
@@ -115,6 +117,15 @@ export function CellLineInfoForm({ value, onChange }: { value: LineForm; onChang
           onChange={(text) => onChange({ ...value, stockCellsPerMl: text.trim() ? Number(text) : null })}
         />
         <span className="text-xs text-fg-muted">동결할 때 바이알당 세포 수(농도 × 바이알 부피, 기본 1 mL)로 자동 입력됩니다.</span>
+      </div>
+      <div className="grid gap-1 text-sm">
+        계대 파종 밀도 (cells/cm²)
+        <ScientificInput
+          label="계대 파종 밀도"
+          value={value.passageCellsPerCm2 === null ? '' : String(value.passageCellsPerCm2)}
+          onChange={(text) => onChange({ ...value, passageCellsPerCm2: text.trim() ? Number(text) : null })}
+        />
+        <span className="text-xs text-fg-muted">계대할 때 새 용기 면적과 곱해 목표 생세포 수를 계산합니다.</span>
       </div>
       <label className="grid gap-1 text-sm">
         태그 (쉼표로 구분)

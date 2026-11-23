@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react';
-import { formatCount, hemocytometer, seedingVolume, targetCellsFor } from '../../shared/cell-count';
-import { VESSEL_AREA_CM2 } from '../../shared/catalog';
+import { formatCount, hemocytometer } from '../../shared/cell-count';
 import { Field, inputCls, smallBtnCls } from './Dialog';
 
 export interface CellCountValues {
@@ -8,35 +7,32 @@ export interface CellCountValues {
   viabilityPct: number | null;
   totalCells: number;
 }
-export function CellCountCalculator({ vessel, onApply }: { vessel: string; onApply(values: CellCountValues): void }) {
+export function CellCountCalculator({
+  volume,
+  onApply,
+}: {
+  volume: string;
+  onApply(values: CellCountValues): void;
+}) {
   const [live, setLive] = useState(['', '', '', '']);
   const [dead, setDead] = useState(['', '', '', '']);
   const [dilution, setDilution] = useState('2');
-  const [volume, setVolume] = useState('1');
-  const [density, setDensity] = useState('20000');
-  const [target, setTarget] = useState('');
   const result = useMemo(() => {
     try {
-      if (!live.some((v) => v.trim()) || !volume.trim() || Number(volume) < 0) return null;
+      if (!live.some((v) => v.trim()) || !Number.isFinite(Number(volume)) || Number(volume) <= 0) return null;
       const counts = hemocytometer({
         liveCounts: live.filter((v) => v.trim()).map(Number),
         deadCounts: dead.filter((v) => v.trim()).map(Number),
         dilutionFactor: Number(dilution),
       });
       // Viability is recorded to 0.1 %, the precision a hemocytometer count supports.
-      const viabilityPct = counts.viabilityPct === null ? null : Math.round(counts.viabilityPct * 10) / 10;
+      const paired = live.every((v, i) => Boolean(v.trim()) === Boolean(dead[i].trim()));
+      const viabilityPct = !paired || counts.viabilityPct === null ? null : Math.round(counts.viabilityPct * 10) / 10;
       return { cellsPerMl: counts.cellsPerMl, viabilityPct, totalCells: counts.cellsPerMl * Number(volume) };
     } catch {
       return null;
     }
   }, [live, dead, dilution, volume]);
-  let required: number | null = null;
-  try {
-    const cells = target.trim() ? Number(target) : targetCellsFor(vessel, Number(density));
-    if (result && cells !== null) required = seedingVolume({ cellsPerMl: result.cellsPerMl, targetCells: cells });
-  } catch {
-    /* Invalid input is kept editable. */
-  }
   return (
     <details className="rounded-lg border border-line bg-sunken p-3">
       <summary className="cursor-pointer font-medium">세포 수 계산기</summary>
@@ -74,13 +70,10 @@ export function CellCountCalculator({ vessel, onApply }: { vessel: string; onApp
         <Field label="희석배수 (기본 2, trypan blue 1:1)">
           <input className={inputCls} type="number" min="0" value={dilution} onChange={(e) => setDilution(e.target.value)} />
         </Field>
-        <Field label="현탁 부피 (mL)">
-          <input className={inputCls} type="number" min="0" value={volume} onChange={(e) => setVolume(e.target.value)} />
-        </Field>
       </div>
       {result ? (
         <div className="text-sm">
-          {formatCount(result.cellsPerMl)} cells/mL · 생존율 {result.viabilityPct?.toFixed(1) ?? '미정'}% · 총{' '}
+          {formatCount(result.cellsPerMl)} cells/mL · 생존율 {result.viabilityPct === null ? '미측정' : `${result.viabilityPct.toFixed(1)}%`} · 회수 생세포{' '}
           {formatCount(result.totalCells)}개{' '}
           <button type="button" className={smallBtnCls} onClick={() => onApply(result)}>
             기록에 적용
@@ -89,18 +82,7 @@ export function CellCountCalculator({ vessel, onApply }: { vessel: string; onApp
       ) : (
         <p className="text-xs text-fg-muted">카운트와 유효한 희석배수를 입력하세요.</p>
       )}
-      <div className="mt-3 grid grid-cols-2 gap-3">
-        <Field label="목표 밀도 (cells/cm²)">
-          <input className={inputCls} type="number" min="0" value={density} onChange={(e) => setDensity(e.target.value)} />
-        </Field>
-        <Field label="또는 목표 세포 수">
-          <input className={inputCls} type="number" min="0" value={target} onChange={(e) => setTarget(e.target.value)} />
-        </Field>
-      </div>
-      <p className="text-xs text-fg-muted">
-        {vessel}: {VESSEL_AREA_CM2[vessel] ?? '면적 미정'} cm² (제조사별 상이) · 필요 부피{' '}
-        {required === null ? '미정' : `${required.toFixed(3)} mL`}
-      </p>
+      <p className="text-xs text-fg-muted">위의 펠릿 현탁 부피를 사용합니다. 생존율은 생세포와 사세포를 같은 칸에서 모두 기록할 때만 계산합니다.</p>
     </details>
   );
 }

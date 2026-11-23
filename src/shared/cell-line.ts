@@ -66,6 +66,8 @@ export interface CellLineDto {
   maxPassage: number | null;
   /** Cells per mL of a frozen stock vial for this line (each vial is filled to the vial volume, 1 mL by default). */
   stockCellsPerMl: number | null;
+  /** Target live cells per cm² of destination culture area at passage. */
+  passageCellsPerCm2: number | null;
   tags: string[];
   notes: string;
   sopProtocolId: string | null;

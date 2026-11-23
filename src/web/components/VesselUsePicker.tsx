@@ -49,12 +49,14 @@ export function VesselUsePicker({
   onChange,
   legacyVessel,
   withMedium = true,
+  finalVolume = false,
   disabled = false,
 }: {
   value: CultureVesselUse | null;
   onChange(use: CultureVesselUse | null, product: VesselProduct | null): void;
   legacyVessel?: string;
   withMedium?: boolean;
+  finalVolume?: boolean;
   disabled?: boolean;
 }) {
   const { items, error } = useVesselProducts();
@@ -163,10 +165,10 @@ export function VesselUsePicker({
             </label>
             {withMedium && (
               <label className="block text-[12px] font-medium text-fg">
-                {product.wellsPerUnit > 1 ? 'well 1개당 배지 (mL, 선택)' : '용기 1개당 배지 (mL, 선택)'}
+                {product.wellsPerUnit > 1 ? 'well' : '용기'} 1개당 {finalVolume ? '최종 배양 부피' : '배지'} (mL, 선택)
                 <input
                   className={`${inputCls} mt-1`}
-                  aria-label="용기 1개당 배지 mL"
+                  aria-label={finalVolume ? '용기 1개당 최종 부피 mL' : '용기 1개당 배지 mL'}
                   type="number"
                   min={0}
                   step="any"

@@ -127,6 +127,9 @@ export function migrateFreezingStock(database: DatabaseSync): void {
   if (!(database.prepare('PRAGMA table_info(cell_lines)').all() as { name: string }[]).some((column) => column.name === 'stock_cells_per_ml')) {
     database.exec('ALTER TABLE cell_lines ADD COLUMN stock_cells_per_ml REAL');
   }
+  if (!(database.prepare('PRAGMA table_info(cell_lines)').all() as { name: string }[]).some((column) => column.name === 'passage_cells_per_cm2')) {
+    database.exec('ALTER TABLE cell_lines ADD COLUMN passage_cells_per_cm2 REAL');
+  }
   const table = database.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='lab_medium_products'").get() as { sql: string };
   if (table.sql.includes('freezing_medium')) return;
   const columns = 'id,kind,label,manufacturer,catalog_no,lot_no,ingredients,ingredients_confirmed,source_label,url,created_at,updated_at';

@@ -11,9 +11,10 @@ import './freeze.css';
 const ml = (v: number) => (v < 1 ? `${Number((v * 1000).toFixed(1))} µL` : `${Number(v.toFixed(3))} mL`);
 const numberOrNull = (text: string) => (text.trim() && Number.isFinite(Number(text)) ? Number(text) : null);
 
-/** Text of the stock settings, as typed. `cellsPerVial` null = stock concentration of the line × vial volume. */
+/** Text of the stock settings, as typed. A null target follows the line or the source vial. */
 export interface FreezeStockDraft {
-  cellsPerVial: string | null;
+  targetCellsPerMl: string | null;
+  sourceCellsPerVial: number | null;
   volumeMl: string;
   productId: string | null;
   medium: string;
@@ -23,9 +24,10 @@ export interface FreezeStockDraft {
   vials: string;
   location: string;
 }
-export function initialFreezeDraft(line: CellLineDto, sourceCellsPerVial: number | null | undefined): FreezeStockDraft {
+export function initialFreezeDraft(sourceCellsPerVial?: number | null): FreezeStockDraft {
   return {
-    cellsPerVial: line.stockCellsPerMl ? null : sourceCellsPerVial ? String(sourceCellsPerVial) : '',
+    targetCellsPerMl: null,
+    sourceCellsPerVial: sourceCellsPerVial ?? null,
     volumeMl: '1',
     productId: null,
     medium: '',
@@ -35,11 +37,18 @@ export function initialFreezeDraft(line: CellLineDto, sourceCellsPerVial: number
     location: '',
   };
 }
-/** Cells per vial the draft stands for: typed, or the line's stock concentration × vial volume. */
-export function draftCellsPerVial(draft: FreezeStockDraft, line: CellLineDto): number | null {
-  if (draft.cellsPerVial !== null) return numberOrNull(draft.cellsPerVial);
+function targetConcentration(draft: FreezeStockDraft, line: CellLineDto): number | null {
+  if (draft.targetCellsPerMl !== null) return numberOrNull(draft.targetCellsPerMl);
+  if (line.stockCellsPerMl !== null) return line.stockCellsPerMl;
   const volume = numberOrNull(draft.volumeMl);
-  return line.stockCellsPerMl && volume ? line.stockCellsPerMl * volume : null;
+  return draft.sourceCellsPerVial && volume ? draft.sourceCellsPerVial / volume : null;
+}
+
+function draftCellsPerVial(draft: FreezeStockDraft, line: CellLineDto): number | null {
+  const concentration = targetConcentration(draft, line);
+  const volume = numberOrNull(draft.volumeMl);
+  if (draft.targetCellsPerMl === null && line.stockCellsPerMl === null) return draft.sourceCellsPerVial;
+  return concentration !== null && volume !== null ? concentration * volume : null;
 }
 /** DMSO % a product states for itself (an ingredient named DMSO in %), if any. */
 function productDmso(product: MediumProduct): number | null {
@@ -132,41 +141,40 @@ export function FreezeStockFields({
   onChange,
   plan,
   retainedCells = 0,
-  sourceCellsPerVial,
 }: {
   line: CellLineDto;
   draft: FreezeStockDraft;
   onChange(next: FreezeStockDraft): void;
   plan: FreezePlanView;
   retainedCells?: number;
-  sourceCellsPerVial?: number | null;
 }) {
   const set = (patch: Partial<FreezeStockDraft>) => onChange({ ...draft, ...patch });
-  const perVial = draftCellsPerVial(draft, line);
-  const fromLine = draft.cellsPerVial === null;
+  const { sourceCellsPerVial } = draft;
+  const concentration = targetConcentration(draft, line);
+  const fromDefault = draft.targetCellsPerMl === null;
   const max = plan.allocation?.possibleVials ?? 0;
-  const perVialHint = fromLine
-    ? `세포 정보 탭의 stock 농도 ${formatCount(line.stockCellsPerMl!)} cells/mL × 바이알 부피`
+  const targetHint = !fromDefault
+    ? '이번 동결에만 적용'
     : line.stockCellsPerMl
-      ? '직접 입력함'
-      : sourceCellsPerVial && draft.cellsPerVial === String(sourceCellsPerVial)
-        ? `입고 stock 기록값에서 채웠습니다. 세포 정보 탭에 stock 농도를 넣으면 그 값을 씁니다.`
-        : '세포 정보 탭에 stock 농도(cells/mL)를 넣으면 자동으로 채웁니다.';
+      ? '세포주 정보의 stock 농도'
+      : sourceCellsPerVial
+        ? '입고 stock의 바이알당 세포 수를 현재 바이알 부피로 환산'
+        : '세포주 정보에 stock 농도를 저장하면 기본값으로 사용합니다.';
   return (
     <>
       <FieldRow>
-        <Field label="바이알당 세포 수 (cells)" hint={perVialHint}>
+        <Field label="목표 stock 농도 (cells/mL)" hint={targetHint}>
           <div className="flex gap-2">
             <div className="min-w-0 flex-1">
               <ScientificInput
-                label="바이알당 세포 수"
-                value={perVial === null ? (draft.cellsPerVial ?? '') : String(perVial)}
-                onChange={(text) => set({ cellsPerVial: text })}
+                label="목표 stock 농도"
+                value={draft.targetCellsPerMl ?? (concentration === null ? '' : String(concentration))}
+                onChange={(text) => set({ targetCellsPerMl: text })}
               />
             </div>
-            {!fromLine && line.stockCellsPerMl && (
-              <button type="button" className={`${smallBtnCls} h-auto shrink-0`} onClick={() => set({ cellsPerVial: null })}>
-                stock 농도로
+            {!fromDefault && (line.stockCellsPerMl || sourceCellsPerVial) && (
+              <button type="button" className={`${smallBtnCls} h-auto shrink-0`} onClick={() => set({ targetCellsPerMl: null })}>
+                기본값
               </button>
             )}
           </div>
@@ -175,6 +183,7 @@ export function FreezeStockFields({
           <input required type="number" min="0.000001" step="any" className={inputCls} value={draft.volumeMl} onChange={(e) => set({ volumeMl: e.target.value })} />
         </Field>
       </FieldRow>
+      {plan.targetCellsPerVial !== null && <p className="mb-3 text-xs text-fg-muted">바이알당 {formatCount(plan.targetCellsPerVial)} cells</p>}
       <Field label="동결 배지" hint="실험 용품에 '동결 배지'로 등록한 제품을 고르면 농도(X)와 DMSO %를 채웁니다.">
         <MediumProductPicker
           kind="freezing_medium"
@@ -227,7 +236,7 @@ function FreezeRecipe({
   if (!allocation)
     return (
       <div className="freeze-recipe is-empty" aria-live="polite">
-        {error ? <p className="text-danger">{error}</p> : <p>Live cell concentration과 현탁 부피(또는 회수 생세포 수), 바이알당 세포 수를 넣으면 만들 수 있는 바이알 수를 계산합니다.</p>}
+        {error ? <p className="text-danger">{error}</p> : <p>회수 생세포 수, 목표 stock 농도, 바이알 부피를 넣으면 만들 수 있는 바이알 수를 계산합니다.</p>}
       </div>
     );
   const volume = Number(draft.volumeMl);
@@ -277,9 +286,16 @@ function FreezeRecipe({
       {vials > max && <p className="text-danger">최대 {max}개까지 만들 수 있습니다.</p>}
       {error && <p className="text-danger">{error}</p>}
       <p className="freeze-recipe-cells">
-        사용 {formatCount(used)} · 남는 세포 {formatCount(leftover)}
-        {retainedCells > 0 && ` · 계속 배양 ${formatCount(retainedCells)}`} cells
+        사용 {formatCount(used)} cells · 남는 세포 {formatCount(leftover)} cells
+        {retainedCells > 0 && ` · 계속 배양 ${formatCount(retainedCells)} cells`}
+        {vials >= 1 && ` · 최종 ${ml(volume * vials)}`}
       </p>
+      {mix?.countedSuspensionMl != null && vials >= 1 && vials <= max && !error && (
+        <p className="freeze-recipe-cells">
+          원 현탁액 {ml(mix.countedSuspensionMl)} / 최종 stock {ml(volume * vials)} · 동결에 쓸 수 있는 세포 중{' '}
+          {Number(((used / allocation.availableCells) * 100).toFixed(1))}% 사용
+        </p>
+      )}
       {vials >= 1 && vials <= max && !error && (
         <ol className="freeze-steps">
           {mix ? (
