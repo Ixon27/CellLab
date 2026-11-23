@@ -36,6 +36,14 @@
 | **Western blot** | 정량 결과 가져오기, 로딩량·항체·ECL 계산, lane map, 체크리스트·타이머, Markdown 기록. |
 | **프로토콜·실험노트** | DOCX·Markdown·텍스트 가져오기, 세포주별 SOP와 실제 수행 단계 기록, 버전 복원 및 노트 내보내기. |
 
+## 화면 미리보기
+
+샘플 배양과 앱에 포함된 프로토콜로 촬영한 실제 CellLab 화면입니다. 이미지를 누르면 원본 크기로 볼 수 있습니다.
+
+| 세포주 · 계보와 작업 기록 | 프로토콜 라이브러리 |
+|---|---|
+| [![샘플 세포주의 계대 관계와 작업 기록](assets/screenshots/lineage.png)](assets/screenshots/lineage.png) | [![CellLab에 포함된 프로토콜 목록](assets/screenshots/protocols.png)](assets/screenshots/protocols.png) |
+
 ## 다운로드 · 설치
 
 | 환경 | Releases에서 받을 파일 |
