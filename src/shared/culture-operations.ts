@@ -53,9 +53,22 @@ export const SEEDING_EXTRA_KEYS = ['seedingCells', 'seedingVolumeMl', 'seedingDe
 /**
  * Links from an operation record to the lineage it changed: a thaw note names its lot and vials, a passage log its
  * new cultures (comma-separated ids) and the plates it took cells from, a freeze log the lot it made, a plate-discard
- * note the plates it discarded. Editing or undoing the record follows these links.
+ * note the plates it discarded, a culture-end record (수확·폐기·오염) the status it ended the culture with. Editing or
+ * undoing the record follows these links.
  */
-export const LINEAGE_EXTRA_KEYS = ['thawLotId', 'thawVials', 'childCultureIds', 'frozenLotId', 'sourcePlates', 'discardedPlates'] as const;
+export const LINEAGE_EXTRA_KEYS = ['thawLotId', 'thawVials', 'childCultureIds', 'frozenLotId', 'sourcePlates', 'discardedPlates', 'endStatus'] as const;
+
+/** How a culture can be ended by hand; the end is a record (harvest log, else a note) that can be edited or undone. */
+export const END_STATUSES = ['harvested', 'discarded', 'contaminated'] as const;
+export type EndStatus = (typeof END_STATUSES)[number];
+export const END_STATUS_LABELS: Record<EndStatus, string> = { harvested: '수확', discarded: '폐기', contaminated: '오염' };
+export function isEndStatus(value: unknown): value is EndStatus {
+  return (END_STATUSES as readonly unknown[]).includes(value);
+}
+/** A harvest end is stored as a harvest log so it lists with other harvests; discard/contamination as a note. */
+export function endLogType(status: EndStatus): 'harvest' | 'note' {
+  return status === 'harvested' ? 'harvest' : 'note';
+}
 
 /**
  * Values read off an automated cell counter's result screen (LUNA-type), kept with the record they were counted for.
@@ -107,9 +120,10 @@ export const RESERVED_EXTRA_KEYS: readonly string[] = [
 ];
 
 /** Lineage operation a record stands for; null for ordinary records. */
-export type LogOperation = 'thaw' | 'passage' | 'freeze' | 'discard';
+export type LogOperation = 'thaw' | 'passage' | 'freeze' | 'discard' | 'end';
 export function logOperation(type: string, extra: Record<string, string>): LogOperation | null {
   if (type === 'passage' || type === 'freeze') return type;
+  if (isEndStatus(extra.endStatus) && type === endLogType(extra.endStatus)) return 'end';
   if (type === 'note' && extra.discardedPlates) return 'discard';
   return type === 'note' && extra.thawLotId ? 'thaw' : null;
 }

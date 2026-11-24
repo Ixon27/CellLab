@@ -154,12 +154,26 @@ describe('계대·동결 기록 수정·취소', () => {
     expect((await logsOf(parent.id)).some((l) => l.type === 'freeze')).toBe(false);
   });
 
-  it('직접 종료한 배양은 상태를 되돌릴 수 있지만 계대로 끝난 배양은 계대 기록으로만 되돌린다', async () => {
-    expect((await call(`/api/cultures/${parent.id}/end`, 'POST', { status: 'discarded', at: later, note: '실수' })).status).toBe(200);
-    expect((await call(`/api/cultures/${parent.id}`, 'PUT', { status: 'active' })).status).toBe(200);
+  it('수확·폐기·오염 종료는 기록으로 남고, 그 기록을 고치면 배양 종료가 바뀌고 취소하면 다시 활성이 된다', async () => {
+    expect((await call(`/api/cultures/${parent.id}/end`, 'POST', { status: 'harvested', at: later, note: '단백질 추출용 수확' })).status).toBe(200);
+    expect(cultureRow(parent.id)).toMatchObject({ status: 'harvested', ended_at: later });
+    const journal = (await call<CellLineLogDto[]>('/api/cell-lines/tcmk/logs')).data;
+    const record = journal.find((l) => l.cultureId === parent.id && l.operation === 'end')!;
+    expect(record).toMatchObject({ type: 'harvest', at: later, note: '단백질 추출용 수확', extra: { endStatus: 'harvested' } });
+    expect((await call(`/api/cultures/${parent.id}`, 'PUT', { status: 'active' })).status).toBe(400);
+
+    expect((await call(`/api/logs/${record.id}`, 'PUT', { endStatus: 'contaminated', at, note: '오염 확인' })).status).toBe(200);
+    expect(db.prepare('SELECT status,ended_at,end_note FROM cultures WHERE id=?').get(parent.id)).toMatchObject({
+      status: 'contaminated',
+      ended_at: at,
+      end_note: '오염 확인',
+    });
+    expect((await logsOf(parent.id)).find((l) => l.id === record.id)).toMatchObject({ type: 'note', operation: 'end', extra: { endStatus: 'contaminated' } });
+    expect((await call(`/api/logs/${record.id}`, 'PUT', { endStatus: 'split' })).status).toBe(400);
+
+    expect((await call(`/api/logs/${record.id}`, 'DELETE')).status).toBe(200);
     expect(cultureRow(parent.id)).toMatchObject({ status: 'active', ended_at: null });
-    await call(`/api/cultures/${parent.id}/passage`, 'POST', { at, children: [{ vessel: 'T25' }] });
-    expect((await call(`/api/cultures/${parent.id}`, 'PUT', { status: 'active' })).status).toBe(409);
+    expect((await logsOf(parent.id)).some((l) => l.id === record.id)).toBe(false);
   });
 });
 

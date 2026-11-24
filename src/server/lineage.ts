@@ -9,6 +9,8 @@ import {
   RESERVED_EXTRA_KEYS,
   SEEDING_EXTRA_KEYS,
   childCultureIds,
+  endLogType,
+  isEndStatus,
   feedFromExtra,
   freezeAllocation,
   freezeMix,
@@ -166,13 +168,10 @@ function insertCulture(
   return toCultureDto(getCulture(id));
 }
 
-/** Statuses set by hand (배양 종료) rather than by a passage or freeze record; only these may be changed back. */
-const MANUAL_STATUSES: CultureRow['status'][] = ['active', 'harvested', 'discarded', 'contaminated'];
-
 /**
  * Update a culture's own fields at any time. A structured vessel use replaces the free-text vessel; `vesselUse: null` clears it.
- * The start time moves the culture's thaw record with it. A hand-set end (수확·폐기·오염) can be changed or undone; a
- * split/frozen culture returns to active only by undoing that passage or freeze.
+ * The start time moves the culture's thaw record with it. The end (status, time, note) belongs to the record that ended
+ * the culture: edit or undo that passage, freeze, plate discard or 수확·폐기·오염 record instead.
  */
 export function updateCulture(cultureId: string, b: LineageInput) {
   return tx(() => {
@@ -186,36 +185,16 @@ export function updateCulture(cultureId: string, b: LineageInput) {
     if (resolved) vessel = formatVesselUse(resolved.product, resolved.use.usedWells);
     const startedAt = b.startedAt === undefined ? culture.started_at : eventTime(b.startedAt);
     const passage = b.passage === undefined ? culture.passage : numeric(b.passage, 'Passage', 0, Number.MAX_SAFE_INTEGER, true);
-    let status = culture.status;
-    if (b.status !== undefined && b.status !== culture.status) {
-      if (!MANUAL_STATUSES.includes(culture.status))
-        throw new HttpError(409, '계대·동결로 끝난 배양은 그 계대·동결 기록을 취소하면 다시 활성이 됩니다');
-      if (!MANUAL_STATUSES.includes(b.status as CultureRow['status'])) throw new HttpError(400, '배양 상태를 확인하세요');
-      status = b.status as CultureRow['status'];
-    }
-    let endedAt = culture.ended_at;
-    let endNote = culture.end_note;
-    if (status === 'active') {
-      endedAt = null;
-      endNote = null;
-    } else if (MANUAL_STATUSES.includes(status)) {
-      if (b.endedAt !== undefined) endedAt = eventTime(b.endedAt);
-      if (b.endNote !== undefined) endNote = text(b.endNote, '종료 메모', false, 10000);
-      if (!endedAt) throw new HttpError(400, '종료 일시를 입력하세요');
-    }
-    if (endedAt && endedAt < startedAt) throw new HttpError(400, '종료 일시가 시작 일시보다 앞섭니다');
-    db.prepare(
-      'UPDATE cultures SET label=?,vessel=?,notes=?,profile_id=?,started_at=?,passage=?,status=?,ended_at=?,end_note=? WHERE id=?',
-    ).run(
+    if (b.status !== undefined || b.endedAt !== undefined || b.endNote !== undefined)
+      throw new HttpError(400, '배양 종료는 그 종료 기록(수확·폐기·오염·계대·동결)에서 수정하거나 취소하세요');
+    if (culture.ended_at && culture.ended_at < startedAt) throw new HttpError(400, '종료 일시가 시작 일시보다 앞섭니다');
+    db.prepare('UPDATE cultures SET label=?,vessel=?,notes=?,profile_id=?,started_at=?,passage=? WHERE id=?').run(
       b.label === undefined ? culture.label : text(b.label, '라벨', true),
       vessel,
       b.notes === undefined ? culture.notes : text(b.notes, '메모', false, 10000),
       b.profileId === undefined ? culture.profile_id : profileFor(culture.cell_line_id, b.profileId),
       startedAt,
       passage,
-      status,
-      endedAt,
-      endNote,
       culture.id,
     );
     if (startedAt !== culture.started_at)
@@ -453,15 +432,16 @@ const SYSTEM_EXTRA_KEYS: readonly string[] = [...PASSAGE_EXTRA_KEYS, ...SEEDING_
 /**
  * Edit any record. System-written keys are preserved; thaw/passage/freeze records keep their type, and moving their time
  * moves what they made (thawed culture start, new cultures' start, frozen lot time, the parent's end). A passage record
- * also takes `dissociationReagent`/`splitRatio`. `count` replaces the counter values. `protocolRun` revises or replaces
- * the protocol the record followed.
+ * also takes `dissociationReagent`/`splitRatio`. A culture-end record takes `endStatus` and carries its status, time and
+ * note to the culture it ended. `count` replaces the counter values. `protocolRun` revises or replaces the protocol the
+ * record followed.
  */
 export function updateLog(logId: string, b: LineageInput) {
   return tx(() => {
     const row = getLog(logId);
     const stored = toLogDto(row);
     if (b.type !== undefined && b.type !== row.type) {
-      if (stored.operation) throw new HttpError(400, '해동·계대·동결 기록의 종류는 바꿀 수 없습니다');
+      if (stored.operation) throw new HttpError(400, '해동·계대·동결·종료 기록의 종류는 바꿀 수 없습니다');
       if (b.type === 'passage' || b.type === 'freeze') throw new HttpError(400, '계대·동결 기록은 해당 작업으로 추가하세요');
     }
     const system = Object.fromEntries(Object.entries(stored.extra).filter(([k]) => SYSTEM_EXTRA_KEYS.includes(k)));
@@ -479,6 +459,11 @@ export function updateLog(logId: string, b: LineageInput) {
     if (b.count !== undefined) {
       for (const key of COUNT_EXTRA_KEYS) delete system[key];
       Object.assign(system, valid(() => validateCountExtras(b.count)));
+    }
+    const endStatus = stored.operation === 'end' ? (b.endStatus ?? stored.extra.endStatus) : null;
+    if (endStatus !== null) {
+      if (!isEndStatus(endStatus)) throw new HttpError(400, '종료 상태를 확인하세요');
+      system.endStatus = endStatus;
     }
     const freeItems = Object.fromEntries(Object.entries(stored.extra).filter(([k]) => !RESERVED_EXTRA_KEYS.includes(k)));
     const legacyFeed = row.type === 'medium_change' && stored.feed?.mode === 'unspecified';
@@ -506,6 +491,7 @@ export function updateLog(logId: string, b: LineageInput) {
       feed: b.type === undefined || b.type === row.type ? storedFeed : undefined,
       morphology: b.type === undefined || b.type === row.type ? (stored.morphology ?? undefined) : undefined,
       ...b,
+      ...(isEndStatus(endStatus) ? { type: endLogType(endStatus) } : {}),
     };
     const v = logValues(merged, {
       legacyFeedOk: legacyFeed && (b.type === undefined || b.type === 'medium_change') && b.feed === undefined,
@@ -517,6 +503,17 @@ export function updateLog(logId: string, b: LineageInput) {
     db.prepare(
       'UPDATE culture_logs SET at=?,type=?,confluency_pct=?,cells_per_ml=?,viability_pct=?,total_cells=?,mycoplasma=?,extra=?,note=? WHERE id=?',
     ).run(v.at, v.type, v.confluency, v.cells, v.viability, v.total, v.mycoplasma, v.extra, v.note, row.id);
+    if (isEndStatus(endStatus)) {
+      if (v.at < getCulture(row.culture_id).started_at) throw new HttpError(400, '종료 일시가 시작 일시보다 앞섭니다');
+      db.prepare('UPDATE cultures SET status=?,ended_at=?,end_note=? WHERE id=? AND status=? AND ended_at=?').run(
+        endStatus,
+        v.at,
+        v.note,
+        row.culture_id,
+        stored.extra.endStatus,
+        row.at,
+      );
+    }
     if (v.at !== row.at) moveOperationTime(row, stored.extra, v.at);
     editProtocolRun(row.id, row.culture_id, b.protocolRun);
     return toLogDto(getLog(row.id));
@@ -547,7 +544,8 @@ function moveOperationTime(row: LogRow, extra: Record<string, string>, at: strin
 
 /**
  * Delete a record; returns the photo files whose rows went with it so the caller can unlink them.
- * Deleting a thaw/passage/freeze record undoes that operation (see removeCulture, undoPassage, undoFreeze).
+ * Deleting a thaw/passage/freeze/plate-discard record undoes that operation (see removeCulture, undoPassage, undoFreeze);
+ * deleting a 수확·폐기·오염 record makes the culture it ended active again.
  */
 export function removeLog(logId: string): string[] {
   return tx(() => {
@@ -567,6 +565,13 @@ export function removeLog(logId: string): string[] {
         reopen(row.culture_id, 'discarded', row.at);
         return files;
       }
+      case 'end':
+        db.prepare("UPDATE cultures SET status='active',ended_at=NULL,end_note=NULL WHERE id=? AND status=? AND ended_at=?").run(
+          row.culture_id,
+          extra.endStatus,
+          row.at,
+        );
+        break;
     }
     const files = photoFiles('l.id=?', row.id);
     db.prepare('DELETE FROM culture_logs WHERE id=?').run(row.id);
@@ -1061,17 +1066,15 @@ function freezeWithin(cultureId: string, b: LineageInput): { lot: LotDto; cultur
   if (end) db.prepare("UPDATE cultures SET status='frozen',ended_at=? WHERE id=?").run(at, cultureId);
   return { lot: toLotDto(getLot(lot.id)), culture: toCultureDto(getCulture(cultureId)) };
 }
+/** End a culture by hand (수확·폐기·오염). The end is a record: editing it moves the end, deleting it reopens the culture. */
 export function endCulture(cultureId: string, b: LineageInput) {
   return tx(() => {
     const culture = getCulture(cultureId);
     if (culture.status !== 'active') throw new HttpError(409, '이미 종료된 배양입니다');
-    if (!['harvested', 'discarded', 'contaminated'].includes(String(b.status))) throw new HttpError(400, '종료 상태를 확인하세요');
-    db.prepare('UPDATE cultures SET status=?,ended_at=?,end_note=? WHERE id=?').run(
-      String(b.status),
-      eventTime(b.at),
-      text(b.note, '종료 메모', false, 10000),
-      cultureId,
-    );
+    if (!isEndStatus(b.status)) throw new HttpError(400, '종료 상태를 확인하세요');
+    const log = insertLog(cultureId, { at: b.at, type: endLogType(b.status), note: b.note, extra: { endStatus: b.status } }, { internal: true });
+    if (log.at < culture.started_at) throw new HttpError(400, '종료 일시가 시작 일시보다 앞섭니다');
+    db.prepare('UPDATE cultures SET status=?,ended_at=?,end_note=? WHERE id=?').run(b.status, log.at, log.note, cultureId);
     return toCultureDto(getCulture(cultureId));
   });
 }

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { CellLineDto, CultureDto, LogDto, LotDto, ProfileDto } from '../../shared/cell-line';
-import { childCultureIds, FEED_MODE_LABELS } from '../../shared/culture-operations';
+import { childCultureIds, END_STATUS_LABELS, END_STATUSES, FEED_MODE_LABELS, isEndStatus, type EndStatus } from '../../shared/culture-operations';
 import type { ProtocolFolder, ProtocolRunEdit } from '../../shared/protocol-run';
 import { api } from '../api';
 import { Dialog, Field, inputCls, primaryBtnCls, smallBtnCls, smallDangerBtnCls, solidDangerBtnCls } from '../components/Dialog';
@@ -31,17 +31,23 @@ export const logLabels: Record<LogDto['type'], string> = {
   mycoplasma: '마이코플라스마',
   note: '메모',
 };
-const OPERATION_LABELS = { thaw: '해동', passage: '계대', freeze: '동결', discard: 'plate 폐기' } as const;
+const OPERATION_LABELS = { thaw: '해동', passage: '계대', freeze: '동결', discard: 'plate 폐기', end: '배양 종료' } as const;
 const OPERATION_FOLDERS: Record<keyof typeof OPERATION_LABELS, ProtocolFolder> = {
   thaw: 'thaw',
   passage: 'passage',
   freeze: 'freeze',
   discard: 'general',
+  end: 'general',
 };
+/** 수확·폐기·오염 for a culture-end record, else the operation's name. */
+function operationLabel(log: LogDto): string {
+  if (log.operation === 'end' && isEndStatus(log.extra.endStatus)) return END_STATUS_LABELS[log.extra.endStatus];
+  return OPERATION_LABELS[log.operation!];
+}
 
 /** How a record is named in lists: the operation it stands for, the feed mode, else its type. */
 export function recordTitle(log: LogDto): string {
-  if (log.operation) return OPERATION_LABELS[log.operation];
+  if (log.operation) return operationLabel(log);
   return log.feed ? FEED_MODE_LABELS[log.feed.mode] : logLabels[log.type];
 }
 
@@ -61,6 +67,13 @@ function undoMessage(log: LogDto, ws: LineageWorkspace): string {
       .filter(Boolean)
       .join('\n\n');
   }
+  if (log.operation === 'end')
+    return [
+      `${operationLabel(log)} 기록을 취소합니다.`,
+      culture && culture.status !== 'active' && culture.endedAt === log.at ? `${culture.label}은(는) 다시 활성 배양이 됩니다.` : '',
+    ]
+      .filter(Boolean)
+      .join('\n\n');
   if (log.operation === 'discard')
     return [
       `plate ${log.extra.discardedPlates} 폐기를 취소합니다. 그 plate는 다시 활성이 됩니다.`,
@@ -101,10 +114,16 @@ export function RecordActions({ log, ws, onChanged }: { log: LogDto; ws: Lineage
       </button>
       <button
         className={log.operation ? smallDangerBtnCls : smallBtnCls}
-        title={log.operation ? `${OPERATION_LABELS[log.operation]}을(를) 되돌리고 만들어진 배양·stock을 정리합니다` : undefined}
+        title={
+          log.operation === 'end'
+            ? `${operationLabel(log)} 기록을 지우고 배양을 다시 활성으로 돌립니다`
+            : log.operation
+              ? `${operationLabel(log)}을(를) 되돌리고 만들어진 배양·stock을 정리합니다`
+              : undefined
+        }
         onClick={() => void remove()}
       >
-        {log.operation ? `${OPERATION_LABELS[log.operation]} 취소` : '삭제'}
+        {log.operation ? `${operationLabel(log)} 취소` : '삭제'}
       </button>
       {dialog === 'edit' && culture && log.operation && <OperationLogDialog log={log} culture={culture} ws={ws} onClose={close} onSaved={onChanged} />}
       {dialog === 'edit' && culture && !log.operation && (
@@ -135,6 +154,7 @@ export function OperationLogDialog({
   const op = log.operation!;
   const [at, setAt] = useState(() => localInput(log.at));
   const [note, setNote] = useState(log.note);
+  const [endStatus, setEndStatus] = useState<EndStatus>(isEndStatus(log.extra.endStatus) ? log.extra.endStatus : 'harvested');
   const [reagent, setReagent] = useState(log.passage?.dissociationReagent ?? '');
   const [ratio, setRatio] = useState(log.passage?.splitRatio ?? '');
   const [confluency, setConfluency] = useState(String(log.confluencyPct ?? ''));
@@ -164,6 +184,7 @@ export function OperationLogDialog({
         });
       }
       if (op === 'passage') Object.assign(body, { dissociationReagent: reagent, splitRatio: ratio });
+      if (op === 'end') body.endStatus = endStatus;
       await api(`/api/logs/${log.id}`, { method: 'PUT', json: body });
       onSaved();
       onClose();
@@ -175,7 +196,7 @@ export function OperationLogDialog({
   }
   return (
     <Dialog
-      title={`${OPERATION_LABELS[op]} 기록 수정`}
+      title={`${operationLabel(log)} 기록 수정`}
       onClose={onClose}
       width={720}
       footer={
@@ -192,9 +213,22 @@ export function OperationLogDialog({
         {op === 'freeze' &&
           `${culture.label} → stock ${lot?.label ?? '(삭제됨)'}. 일시를 고치면 stock의 동결일도 같이 바뀌고, 바이알 수·위치는 stock 정보에서 고칩니다.`}
         {op === 'discard' && `${culture.label}의 plate ${log.extra.discardedPlates} 폐기. 폐기를 되돌리려면 이 기록을 취소하세요.`}
+        {op === 'end' &&
+          `${culture.label}을(를) ${operationLabel(log)}(으)로 종료한 기록입니다. 일시·상태·메모를 고치면 배양의 종료 정보도 같이 바뀌고, 이 기록을 취소하면 배양이 다시 활성이 됩니다.`}
       </p>
       <ProtocolRunSection line={ws.line} profile={profile} folder={OPERATION_FOLDERS[op]} value={protocolRun} onChange={setProtocolRun} saved={log.protocolRun} />
-      <Field label={`${OPERATION_LABELS[op]} 일시`}>
+      {op === 'end' && (
+        <Field label="종료 상태">
+          <select className={inputCls} value={endStatus} onChange={(e) => setEndStatus(e.target.value as EndStatus)}>
+            {END_STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {END_STATUS_LABELS[s]}
+              </option>
+            ))}
+          </select>
+        </Field>
+      )}
+      <Field label={`${op === 'end' ? '종료' : OPERATION_LABELS[op]} 일시`}>
         <input required type="datetime-local" className={inputCls} value={at} onChange={(e) => setAt(e.target.value)} />
       </Field>
       {op === 'passage' && (

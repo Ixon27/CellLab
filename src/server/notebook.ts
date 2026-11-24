@@ -228,7 +228,8 @@ export function buildNotebookMarkdown(lineId: string, query: NotebookQuery, embe
       .prepare(`SELECT l.* FROM culture_logs l JOIN cultures c ON c.id=l.culture_id WHERE ${logWhere.join(' AND ')} ORDER BY l.at,l.created_at,l.id`)
       .all(...logParams) as unknown as LogRow[]
   ).filter((r) => inRange(r.at));
-  const logs = toLogDtos(logRows);
+  // A 수확·폐기·오염 record is printed once, as the culture's end entry below.
+  const logs = toLogDtos(logRows).filter((log) => log.operation !== 'end');
 
   const lotRows = (db.prepare('SELECT * FROM cryo_lots WHERE cell_line_id=?').all(lineId) as unknown as LotRow[]).filter(
     (r) => inRange(r.event_at) && (!query.cultureId || r.source_culture_id === query.cultureId),

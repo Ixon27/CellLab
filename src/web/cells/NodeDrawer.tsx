@@ -30,8 +30,14 @@ export const CULTURE_STATUS_LABELS: Record<CultureDto['status'], string> = {
   discarded: '폐기',
   contaminated: '오염',
 };
-/** Ends set by 배양 종료; these may be changed or undone in place. Split/frozen are undone through their record. */
-const MANUAL_END = ['harvested', 'discarded', 'contaminated'] as const;
+/** The record that ended a culture in each status; editing or undoing that record changes the end. */
+const END_RECORD: Record<Exclude<CultureDto['status'], 'active'>, string> = {
+  split: '계대',
+  frozen: '동결',
+  harvested: '수확',
+  discarded: '폐기',
+  contaminated: '오염',
+};
 
 export function NodeDrawer({
   ws,
@@ -65,9 +71,6 @@ export function NodeDrawer({
   const [vessel, setVessel] = useState(culture?.vessel ?? '');
   const [vesselUse, setVesselUse] = useState<CultureVesselUse | null>(culture?.vesselUse ?? null);
   const [profile, setProfile] = useState(culture?.profileId ?? '');
-  const [status, setStatus] = useState<CultureDto['status']>(culture?.status ?? 'active');
-  const [endedAt, setEndedAt] = useState(culture?.endedAt ? localInput(culture.endedAt) : '');
-  const [endNote, setEndNote] = useState(culture?.endNote ?? '');
   const [notes, setNotes] = useState(node.notes);
   const [busy, setBusy] = useState(false);
   const [dialog, setDialog] = useState<'thaw' | 'log' | 'feed' | 'passage' | 'freeze' | 'end' | 'delete' | 'plates' | null>(null);
@@ -85,12 +88,8 @@ export function NodeDrawer({
     setVessel(culture?.vessel ?? '');
     setVesselUse(culture?.vesselUse ?? null);
     setProfile(culture?.profileId ?? '');
-    setStatus(culture?.status ?? 'active');
-    setEndedAt(culture?.endedAt ? localInput(culture.endedAt) : '');
-    setEndNote(culture?.endNote ?? '');
   }, [node, lot, culture]);
   const startedAt = lot?.eventAt ?? culture!.startedAt;
-  const manualEnd = culture && (status === 'active' || (MANUAL_END as readonly string[]).includes(status));
   const props = {
     line,
     lot,
@@ -125,7 +124,6 @@ export function NodeDrawer({
             profileId: profile || null,
             startedAt: time,
             passage: optionalNumber(passage, 'Passage') ?? undefined,
-            ...(manualEnd ? { status, ...(status === 'active' ? {} : { endedAt: endedAt ? isoFromInput(endedAt) : undefined, endNote }) } : {}),
           };
       await api(`/api/${lot ? 'lots' : 'cultures'}/${node.id}`, { method: 'PUT', json });
       onChanged();
@@ -277,34 +275,10 @@ export function NodeDrawer({
                 ))}
               </select>
             </Field>
-            {manualEnd && culture!.status !== 'active' && (
-              <>
-                <Field label="상태" hint="활성으로 바꾸면 종료 기록이 지워지고 다시 작업을 기록할 수 있습니다.">
-                  <select className={inputCls} value={status} onChange={(e) => setStatus(e.target.value as CultureDto['status'])}>
-                    <option value="active">활성 (종료 취소)</option>
-                    {MANUAL_END.map((s) => (
-                      <option key={s} value={s}>
-                        {CULTURE_STATUS_LABELS[s]}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-                {status !== 'active' && (
-                  <>
-                    <Field label="종료 일시">
-                      <input type="datetime-local" className={inputCls} value={endedAt} onChange={(e) => setEndedAt(e.target.value)} />
-                    </Field>
-                    <Field label="종료 메모">
-                      <textarea className={inputCls} value={endNote} onChange={(e) => setEndNote(e.target.value)} />
-                    </Field>
-                  </>
-                )}
-              </>
-            )}
-            {culture && !manualEnd && (
+            {culture && culture.status !== 'active' && (
               <p className="mb-3 text-xs text-fg-muted">
-                {CULTURE_STATUS_LABELS[culture.status]} 상태는 아래 기록 목록의 {culture.status === 'split' ? '계대' : '동결'} 기록을 취소하면 다시 활성이
-                됩니다.
+                {CULTURE_STATUS_LABELS[culture.status]} 상태는 아래 기록 목록의 {END_RECORD[culture.status]} 기록에서 일시·메모를 고치거나, 그 기록을
+                취소하면 다시 활성이 됩니다.
               </p>
             )}
           </>

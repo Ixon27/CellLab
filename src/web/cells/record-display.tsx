@@ -5,6 +5,7 @@ export type RecordKind = 'observation' | 'feed' | 'passage' | 'freeze' | 'thaw' 
 
 /** The visual family of a record: operations first, then what the record type says. */
 export function recordKind(log: LogDto): RecordKind {
+  if (log.operation === 'end') return log.extra.endStatus === 'harvested' ? 'harvest' : 'discard';
   if (log.operation) return log.operation;
   if (log.feed || log.type === 'medium_change') return 'feed';
   if (log.type === 'observation') return 'observation';

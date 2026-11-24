@@ -97,6 +97,15 @@ INSERT OR IGNORE INTO cell_protocols(protocol_id,cell_line_id,folder,sort)
   SELECT protocol_id,cell_line_id,'general',0 FROM protocol_copies
   WHERE cell_line_id IS NOT NULL AND cell_line_id IN (SELECT id FROM cell_lines);
 `);
+// Cultures ended by hand before the end became a record get that record, so every end can be edited or undone from it.
+// A culture discarded plate by plate already has its plate-discard record.
+db.exec(`INSERT INTO culture_logs(id,culture_id,at,type,extra,note,created_at)
+  SELECT lower(hex(randomblob(6))), c.id, c.ended_at, CASE c.status WHEN 'harvested' THEN 'harvest' ELSE 'note' END,
+    json_object('endStatus', c.status), COALESCE(c.end_note, ''), c.ended_at
+  FROM cultures c
+  WHERE c.status IN ('harvested','discarded','contaminated') AND c.ended_at IS NOT NULL
+    AND NOT EXISTS(SELECT 1 FROM culture_logs l WHERE l.culture_id=c.id AND json_extract(l.extra,'$.endStatus') IS NOT NULL)
+    AND NOT EXISTS(SELECT 1 FROM culture_plates p WHERE p.culture_id=c.id AND p.status='discarded' AND p.at=c.ended_at);`);
 
 db.prepare(`UPDATE jobs SET status='error', error='서버 재시작으로 중단', updated_at=? WHERE status IN ('queued','running')`).run(
   new Date().toISOString(),
