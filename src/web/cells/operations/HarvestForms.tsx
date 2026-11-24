@@ -14,6 +14,7 @@ import {
 import { vesselArea } from '../../../shared/lab-products';
 import type { CultureVesselUse, VesselProduct } from '../../../shared/lab-products';
 import type { ProtocolRunEdit } from '../../../shared/protocol-run';
+import { performedFields } from '../../../shared/sop';
 import { api } from '../../api';
 import { CellCountCalculator } from '../../components/CellCountCalculator';
 import {
@@ -30,7 +31,7 @@ import { VesselUsePicker } from '../../components/VesselUsePicker';
 import { executionProfile } from '../culture-plan-state';
 import { ProtocolRunSection } from '../ProtocolRun';
 import { composeOperationNote, FieldRow, FormError, isoFromInput, localInput, optionalNumber, PlanRecordSection } from './common';
-import { freezeRequest, FreezeStockFields, initialFreezeDraft, planFreeze, type FreezeStockDraft } from './FreezeMix';
+import { freezeRequest, FreezeStockFields, initialFreezeDraft, planFreeze, stockMediumText, type FreezeStockDraft } from './FreezeMix';
 import type { OperationProps } from './OperationForms';
 
 /** Parsed counter values plus the message of a bad entry (shown, never thrown at render). */
@@ -313,6 +314,17 @@ export function PassageForm({ line, culture, profiles, initialAt, initialPlate, 
       setBusy(false);
     }
   }
+  // The protocol shows this passage's own ratio, density, reagent and confluency as they are entered (common conditions).
+  const commonDerived = derivePassage(common, culture, byPlate ? 1 : sourcePlates.length, line);
+  const performed = performedFields({
+    splitRatio: common.ratio ?? commonDerived.auto.text,
+    dissociationReagent: reagent,
+    confluencyPct: numberOrNull(common.confluency),
+    seedingDensitiesPerCm2: commonDerived.children.map((c, i) => {
+      const area = commonDerived.childAreas[i];
+      return area && Number(c.cells) > 0 ? Number(c.cells) / area : null;
+    }),
+  });
   return (
     <form
       onSubmit={(e) => {
@@ -324,7 +336,7 @@ export function PassageForm({ line, culture, profiles, initialAt, initialPlate, 
         세포를 회수·계수해 새 용기에 접종합니다. 새 배양은 P{culture.passage + 1}입니다. 배지만 바꾸려면 배지 교체를 사용하세요.
       </p>
       <PlanRecordSection profiles={profiles} culture={culture} stage="passage" lineId={line.id} records={records} onRecords={setRecords} />
-      <ProtocolRunSection line={line} profile={profile} folder="passage" value={protocolRun} onChange={setProtocolRun} />
+      <ProtocolRunSection line={line} profile={profile} folder="passage" value={protocolRun} onChange={setProtocolRun} performed={performed} />
       <Field label="계대 일시">
         <input required type="datetime-local" className={inputCls} value={at} onChange={(e) => setAt(e.target.value)} />
       </Field>
@@ -675,6 +687,10 @@ export function FreezeForm({ line, culture, profiles, initialAt, initialPlate, d
   const endSelected = retainedN <= 0 && end;
   const remaining = activePlates.filter((no) => !endSelected || !sourcePlates.includes(no));
   const plan = planFreeze({ availableCells: recoveredN, retainedCells: retainedN, suspensionCellsPerMl: suspensionN, draft: stock, line });
+  const performed = performedFields({
+    confluencyPct: numberOrNull(confluency),
+    freezingMedium: stock.medium.trim() ? stockMediumText(stock, plan) : null,
+  });
   async function save() {
     setBusy(true);
     setError(null);
@@ -726,7 +742,7 @@ export function FreezeForm({ line, culture, profiles, initialAt, initialPlate, d
         </PlatePicker>
       )}
       <PlanRecordSection profiles={profiles} culture={culture} stage="freeze" lineId={line.id} records={records} onRecords={setRecords} />
-      <ProtocolRunSection line={line} profile={profile} folder="freeze" value={protocolRun} onChange={setProtocolRun} />
+      <ProtocolRunSection line={line} profile={profile} folder="freeze" value={protocolRun} onChange={setProtocolRun} performed={performed} />
       <fieldset className="op-section">
         <legend>
           <b>1</b>계수

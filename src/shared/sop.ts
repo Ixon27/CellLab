@@ -1,3 +1,4 @@
+import { formatCount } from './cell-count';
 import { CULTURE_FIELDS, completeMediumText } from './culture';
 import type { CultureProfileFields } from './culture';
 import type { ProfileDto } from './cell-line';
@@ -58,4 +59,37 @@ export function previewSop(
 
 export function fillSop(template: string, line: { name: string; max_passage: number | null }, fields: CultureProfileFields): string {
   return previewSop(template, line, fields).markdown;
+}
+
+/** What one operation actually used, as counted and decided at the bench. */
+export interface PerformedRun {
+  splitRatio?: string | null;
+  dissociationReagent?: string | null;
+  confluencyPct?: number | null;
+  /** Seeding density of each new vessel (cells/cm²); null where the vessel has no area. */
+  seedingDensitiesPerCm2?: (number | null)[];
+  freezingMedium?: string | null;
+}
+
+/**
+ * The run's own values under the condition-set keys a protocol fills from, so `{{split_ratio}}` reads the ratio this
+ * passage used rather than the condition set's range. Only values the run recorded are returned; the rest keep coming
+ * from the condition set.
+ */
+export function performedFields(run: PerformedRun): CultureProfileFields {
+  const out: CultureProfileFields = {};
+  if (run.splitRatio?.trim()) out.split_ratio = run.splitRatio.trim();
+  if (run.dissociationReagent?.trim()) out.dissociation_reagent = run.dissociationReagent.trim();
+  if (run.freezingMedium?.trim()) out.freezing_medium = run.freezingMedium.trim();
+  if (run.confluencyPct !== null && run.confluencyPct !== undefined && Number.isFinite(run.confluencyPct))
+    out.subculture_confluency_pct = run.confluencyPct;
+  const densities = [
+    ...new Set(
+      (run.seedingDensitiesPerCm2 ?? [])
+        .filter((d): d is number => d !== null && Number.isFinite(d) && d > 0)
+        .map((d) => `${formatCount(d)} cells/cm²`),
+    ),
+  ];
+  if (densities.length) out.seeding_density = densities.join(', ');
+  return out;
 }

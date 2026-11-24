@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { CellLineDto, ProfileDto } from '../../shared/cell-line';
+import type { CultureProfileFields } from '../../shared/culture';
 import {
   PROTOCOL_FOLDERS,
   PROTOCOL_FOLDER_LABELS,
@@ -90,6 +91,7 @@ export function ProtocolRunSection({
   value,
   onChange,
   saved,
+  performed,
 }: {
   line: CellLineDto;
   /** Condition set whose values fill the protocol variables (the culture's linked set, else the active one). */
@@ -98,6 +100,8 @@ export function ProtocolRunSection({
   value: ProtocolRunEdit;
   onChange(next: ProtocolRunEdit): void;
   saved?: ProtocolRun | null;
+  /** This run's own values (see performedFields), shown in the steps as they will be saved. */
+  performed?: CultureProfileFields;
 }) {
   const { items, error } = useCellProtocols(line.id);
   const editingRecord = saved !== undefined;
@@ -115,11 +119,11 @@ export function ProtocolRunSection({
   const steps = useMemo(
     () =>
       protocol
-        ? protocolSteps(fillProtocol(protocol.bodyMd, line, profile).markdown)
+        ? protocolSteps(fillProtocol(protocol.bodyMd, line, profile, performed).markdown)
         : revising && saved
           ? saved.steps.map((s) => ({ index: s.index, section: s.section, text: s.original }))
           : [],
-    [protocol, revising, saved, line, profile],
+    [protocol, revising, saved, line, profile, performed],
   );
   const changes = new Map((value?.deviations ?? []).map((d) => [d.index, d.text]));
   const rows: StepRow[] = steps.map((s) => ({ index: s.index, section: s.section, original: s.text, modified: changes.get(s.index) ?? null }));

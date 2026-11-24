@@ -198,6 +198,39 @@ describe('기록 뒤 프로토콜 변경', () => {
     expect((await call(`/api/logs/${record.id}`, 'PUT', { protocolRun: { deviations: [{ index: 7, text: 'x' }] } })).status).toBe(400);
     expect((await call<LogDto>(`/api/logs/${record.id}`, 'PUT', { protocolRun: null })).data.protocolRun).toBeNull();
   });
+
+  it('계대 프로토콜에는 그 계대의 분주 비율·접종 밀도·confluency가 들어가고, 기록에서 비율을 고치면 같이 바뀐다', async () => {
+    const bodyMd = '1. Confluency {{subculture_confluency_pct}}% 도달 시 계대한다.\n2. {{split_ratio}} 또는 {{seeding_density}}로 분주한다.\n3. 90초 둔다.\n';
+    const protocol = (await call<{ id: string }>('/api/cell-lines/tcmk/protocols', 'POST', { folder: 'passage', title: '계대', bodyMd })).data;
+    const updatedAt = (db.prepare('SELECT updated_at FROM protocols WHERE id=?').get(protocol.id) as { updated_at: string }).updated_at;
+    const dish = (
+      await call<{ id: string }>('/api/lab-products/vessels', 'POST', { label: '100 mm dish', format: '100 mm dish', wellsPerUnit: 1, areaCm2PerWell: 55, sourceLabel: '테스트' })
+    ).data;
+    const [parent] = await thaw(await receive(1), [{ vessel: 'T75' }]);
+    const passaged = await call<{ parent: CultureDto }>(`/api/cultures/${parent.id}/passage`, 'POST', {
+      at,
+      confluencyPct: 90,
+      recoveredLiveCells: 5_000_000,
+      splitRatio: '1:7',
+      children: [{ vesselUse: { vesselProductId: dish.id, usedWells: 1, mediumMl: 10 }, seededCells: 1_100_000 }],
+      protocolRun: { protocolId: protocol.id, protocolUpdatedAt: updatedAt, deviations: [] },
+    });
+    expect(passaged.status).toBe(201);
+    const record = (await logsOf(parent.id)).find((l) => l.type === 'passage')!;
+    expect(record.protocolRun!.steps.map((s) => [s.original, s.modified])).toEqual([
+      ['Confluency 90% 도달 시 계대한다.', null],
+      ['1:7 또는 2.00 × 10⁴ cells/cm²로 분주한다.', null],
+      ['90초 둔다.', null],
+    ]);
+
+    const edited = await call<LogDto>(`/api/logs/${record.id}`, 'PUT', { splitRatio: '1:70', confluencyPct: 85, protocolRun: { deviations: [] } });
+    expect(edited.status).toBe(200);
+    expect(edited.data.protocolRun!.steps.map((s) => s.original)).toEqual([
+      'Confluency 85% 도달 시 계대한다.',
+      '1:70 또는 2.00 × 10⁴ cells/cm²로 분주한다.',
+      '90초 둔다.',
+    ]);
+  });
 });
 
 describe('링크가 없던 이전 기록', () => {

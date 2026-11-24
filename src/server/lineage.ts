@@ -31,7 +31,7 @@ import { db, now, parseJsonColumn, tx } from './db';
 import { HttpError } from './http-error';
 import { getMediumProduct, getVesselProduct } from './lab-products';
 import type { LineageAnnotations } from '../shared/lineage';
-import { attachProtocolRun, editProtocolRun } from './protocol-runs';
+import { attachProtocolRun, editProtocolRun, performedOfLog, refreshPerformedValues } from './protocol-runs';
 
 export type LineageInput = Record<string, unknown>;
 export const LOW_VIAL_THRESHOLD = 2;
@@ -439,6 +439,7 @@ const SYSTEM_EXTRA_KEYS: readonly string[] = [...PASSAGE_EXTRA_KEYS, ...SEEDING_
 export function updateLog(logId: string, b: LineageInput) {
   return tx(() => {
     const row = getLog(logId);
+    const performedBefore = performedOfLog(logId);
     const stored = toLogDto(row);
     if (b.type !== undefined && b.type !== row.type) {
       if (stored.operation) throw new HttpError(400, '해동·계대·동결·종료 기록의 종류는 바꿀 수 없습니다');
@@ -516,6 +517,7 @@ export function updateLog(logId: string, b: LineageInput) {
     }
     if (v.at !== row.at) moveOperationTime(row, stored.extra, v.at);
     editProtocolRun(row.id, row.culture_id, b.protocolRun);
+    refreshPerformedValues(row.id, performedBefore);
     return toLogDto(getLog(row.id));
   });
 }

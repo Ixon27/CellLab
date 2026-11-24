@@ -101,6 +101,11 @@ export function planFreeze(i: {
   }
 }
 
+/** The freezing medium as the stock records it: the strength is added unless the product name already states it. */
+export function stockMediumText(draft: FreezeStockDraft, plan: FreezePlanView): string {
+  return draft.medium.includes(`${plan.strengthX}X`) ? draft.medium.trim() : `${draft.medium.trim()} · ${plan.strengthX}X`;
+}
+
 /** Stock fields of a freeze request (freeze, or the leftover freeze of a passage); throws a Korean message when unsavable. */
 export function freezeRequest(
   plan: FreezePlanView,
@@ -118,8 +123,7 @@ export function freezeRequest(
     vials: plan.vials,
     cellsPerVial: target,
     location: draft.location,
-    // The stock keeps the strength in its medium text unless the product name already states it.
-    freezingMedium: draft.medium.includes(`${plan.strengthX}X`) ? draft.medium.trim() : `${draft.medium.trim()} · ${plan.strengthX}X`,
+    freezingMedium: stockMediumText(draft, plan),
     plan: {
       ...cells,
       targetCellsPerVial: target,
