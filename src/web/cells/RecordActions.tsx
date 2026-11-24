@@ -85,7 +85,8 @@ function undoMessage(log: LogDto, ws: LineageWorkspace): string {
   return [
     '동결을 취소합니다.',
     lot ? `stock ${lot.label}(${lot.vialsRemaining}/${lot.vialsInitial} vial)이 삭제됩니다.` : '',
-    culture?.status === 'frozen' ? `${culture.label}은(는) 다시 활성 배양이 됩니다.` : '',
+    log.extra.sourcePlates ? `동결에 사용한 plate: ${log.extra.sourcePlates.split(',').join(', ')}.` : '',
+    culture?.status === 'frozen' && culture.endedAt === log.at ? `${culture.label}의 종료 기록이 취소됩니다.` : '',
   ]
     .filter(Boolean)
     .join('\n\n');

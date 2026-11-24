@@ -140,10 +140,10 @@ export function plateList(text: string | undefined): number[] {
 
 /* ───────────── Plates of one culture ───────────── */
 
-/** A culture spread over several identical vessels; each vessel ("plate") can be passaged or discarded on its own. */
-export const PLATE_STATUSES = ['active', 'passaged', 'discarded'] as const;
+/** A culture spread over several identical vessels that can be handled independently. */
+export const PLATE_STATUSES = ['active', 'passaged', 'discarded', 'frozen'] as const;
 export type PlateStatus = (typeof PLATE_STATUSES)[number];
-export const PLATE_STATUS_LABELS: Record<PlateStatus, string> = { active: '활성', passaged: '계대함', discarded: '폐기' };
+export const PLATE_STATUS_LABELS: Record<PlateStatus, string> = { active: '활성', passaged: '계대함', discarded: '폐기', frozen: '동결함' };
 /** Dishes/flasks count one each; multi-well plates count whole plates. */
 export function plateCountOf(use: { usedWells: number; product: { wellsPerUnit: number } } | null): number {
   if (!use) return 1;

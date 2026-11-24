@@ -188,12 +188,51 @@ function passageRequest(draft: PassageDraft, d: PassageDerived) {
   };
 }
 
+type HarvestProps = OperationProps & { initialPlate?: number };
+
+function useSourcePlates(culture: CultureDto, initialPlate?: number) {
+  const active = culture.plates.filter((p) => p.status === 'active').map((p) => p.no);
+  const [selected, setSelected] = useState(() => initialPlate !== undefined ? [initialPlate] : active);
+  return { active, selected: selected.filter((no) => active.includes(no)), setSelected };
+}
+
+function PlatePicker({
+  culture, label, selected, onChange, children,
+}: {
+  culture: CultureDto;
+  label: string;
+  selected: number[];
+  onChange(plates: number[]): void;
+  children?: React.ReactNode;
+}) {
+  return (
+    <fieldset className="mb-3 rounded-lg border border-line p-3">
+      <legend className="px-1 text-sm font-medium">{label}</legend>
+      <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
+        {culture.plates.map((p) => (
+          <label key={p.no} className={`flex items-center gap-1.5 ${p.status === 'active' ? '' : 'text-fg-dim'}`}>
+            <input
+              type="checkbox"
+              disabled={p.status !== 'active'}
+              checked={selected.includes(p.no)}
+              onChange={(e) => onChange(e.target.checked ? [...selected, p.no].sort((a, b) => a - b) : selected.filter((no) => no !== p.no))}
+            />
+            plate {p.no}
+            {p.status !== 'active' && ` (${PLATE_STATUS_LABELS[p.status]})`}
+          </label>
+        ))}
+      </div>
+      {children}
+    </fieldset>
+  );
+}
+
 /**
  * Passage: count right before (counter screen + confluency), seed new vessels, and decide what happens to the cells
  * not seeded (discard, keep growing in the original vessel, or freeze as stock in the same step). Several plates are
  * either pooled into one record or passaged plate by plate: common conditions, with any plate given its own.
  */
-export function PassageForm({ line, culture, profiles, initialAt, defaultCellsPerVial, onSaved }: OperationProps) {
+export function PassageForm({ line, culture, profiles, initialAt, initialPlate, defaultCellsPerVial, onSaved }: HarvestProps) {
   const [at, setAt] = useState(() => localInput(initialAt ?? Date.now()));
   const [reagent, setReagent] = useState('');
   const [common, setCommon] = useState<PassageDraft>(() => ({
@@ -208,8 +247,7 @@ export function PassageForm({ line, culture, profiles, initialAt, defaultCellsPe
     leftover: 'discarded',
     freeze: initialFreezeDraft(defaultCellsPerVial),
   }));
-  const activePlates = culture.plates.filter((p) => p.status === 'active').map((p) => p.no);
-  const [sourcePlates, setSourcePlates] = useState<number[]>(activePlates);
+  const { active: activePlates, selected: sourcePlates, setSelected: setSourcePlates } = useSourcePlates(culture, initialPlate);
   const [perPlate, setPerPlate] = useState(false);
   /** Plate-by-plate mode: plates whose conditions differ from the common ones. */
   const [own, setOwn] = useState<Record<number, PassageDraft>>({});
@@ -291,24 +329,7 @@ export function PassageForm({ line, culture, profiles, initialAt, defaultCellsPe
         <input required type="datetime-local" className={inputCls} value={at} onChange={(e) => setAt(e.target.value)} />
       </Field>
       {multiPlate && (
-        <fieldset className="mb-3 rounded-lg border border-line p-3">
-          <legend className="px-1 text-sm font-medium">계대한 plate</legend>
-          <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
-            {culture.plates.map((p) => (
-              <label key={p.no} className={`flex items-center gap-1.5 ${p.status === 'active' ? '' : 'text-fg-dim'}`}>
-                <input
-                  type="checkbox"
-                  disabled={p.status !== 'active'}
-                  checked={sourcePlates.includes(p.no)}
-                  onChange={(e) =>
-                    setSourcePlates((old) => (e.target.checked ? [...old, p.no].sort((a, b) => a - b) : old.filter((n) => n !== p.no)))
-                  }
-                />
-                plate {p.no}
-                {p.status !== 'active' && ` (${PLATE_STATUS_LABELS[p.status]})`}
-              </label>
-            ))}
-          </div>
+        <PlatePicker culture={culture} label="계대한 plate" selected={sourcePlates} onChange={setSourcePlates}>
           {sourcePlates.length > 1 && (
             <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm">
               <label className="flex items-center gap-1.5">
@@ -328,7 +349,7 @@ export function PassageForm({ line, culture, profiles, initialAt, defaultCellsPe
                 ? '고른 plate의 세포를 모아 한 번 계수하고 나눠 담은 것으로 기록합니다.'
                 : '고른 plate가 계보에서 새 배양으로 이어집니다.'}
           </p>
-        </fieldset>
+        </PlatePicker>
       )}
       <Field label="사용한 해리 시약·농도">
         <input
@@ -402,7 +423,7 @@ export function PassageForm({ line, culture, profiles, initialAt, defaultCellsPe
         <textarea className={inputCls} value={note} onChange={(e) => setNote(e.target.value)} />
       </Field>
       <FormError>{error}</FormError>
-      <button className={primaryBtnCls} disabled={busy}>
+      <button className={primaryBtnCls} disabled={busy || !sourcePlates.length}>
         {busy ? '저장 중…' : byPlate ? `계대 저장 (plate ${groups.length}개)` : '계대 저장'}
       </button>
     </form>
@@ -624,7 +645,7 @@ function PassageDraftFields({
  * suspension volume gives the cells; the line's stock concentration gives the cells per vial; the vial count is chosen
  * within what the cells allow, and the freezing medium's strength fixes how much of it goes in.
  */
-export function FreezeForm({ line, culture, profiles, initialAt, defaultCellsPerVial, onSaved }: OperationProps) {
+export function FreezeForm({ line, culture, profiles, initialAt, initialPlate, defaultCellsPerVial, onSaved }: HarvestProps) {
   const [at, setAt] = useState(() => localInput(initialAt ?? Date.now()));
   const [confluency, setConfluency] = useState('');
   const [counter, setCounter] = useState<CounterDraft>(emptyCounter);
@@ -642,6 +663,8 @@ export function FreezeForm({ line, culture, profiles, initialAt, defaultCellsPer
   const [protocolRun, setProtocolRun] = useState<ProtocolRunEdit>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { active: activePlates, selected: sourcePlates, setSelected: setSourcePlates } = useSourcePlates(culture, initialPlate);
+  const multiPlate = culture.plates.length > 1;
   const profile = executionProfile(profiles, culture).profile;
   const { counted, problem: counterProblem } = readCounter(counter);
   const suspensionN = counted ? counted.liveCellsPerMl : numberOrNull(suspension);
@@ -649,11 +672,14 @@ export function FreezeForm({ line, culture, profiles, initialAt, defaultCellsPer
   const recoveredN = counted ? counted.liveCells : numberOrNull(recovered) ?? (suspensionN !== null && volume !== null ? suspensionN * volume : null);
   const viabilityPct = counted ? counted.viabilityPct : manualViability;
   const retainedN = numberOrNull(retained) ?? 0;
+  const endSelected = retainedN <= 0 && end;
+  const remaining = activePlates.filter((no) => !endSelected || !sourcePlates.includes(no));
   const plan = planFreeze({ availableCells: recoveredN, retainedCells: retainedN, suspensionCellsPerMl: suspensionN, draft: stock, line });
   async function save() {
     setBusy(true);
     setError(null);
     try {
+      if (!sourcePlates.length) throw new Error('동결한 plate를 하나 이상 고르세요');
       if (counterProblem) throw new Error(counterProblem);
       if (recoveredN === null) throw new Error('Live cell concentration과 펠릿 현탁 부피(또는 회수한 생세포 수)를 넣으세요');
       const request = freezeRequest(plan, stock, { recoveredLiveCells: recoveredN, retainedCells: retainedN, suspensionCellsPerMl: suspensionN });
@@ -667,7 +693,8 @@ export function FreezeForm({ line, culture, profiles, initialAt, defaultCellsPer
           cellsPerMl: suspensionN,
           count: counted?.extras ?? (numberOrNull(counter.countSuspensionMl) ? { countSuspensionMl: Number(counter.countSuspensionMl) } : null),
           ...request,
-          endCulture: retainedN > 0 ? false : end,
+          sourcePlates: multiPlate ? sourcePlates : null,
+          endCulture: endSelected,
           plan: {
             ...request.plan,
             representativeThaw: testVials.trim()
@@ -693,6 +720,11 @@ export function FreezeForm({ line, culture, profiles, initialAt, defaultCellsPer
         void save();
       }}
     >
+      {multiPlate && (
+        <PlatePicker culture={culture} label="stock을 만든 plate" selected={sourcePlates} onChange={setSourcePlates}>
+          <p className="mt-1 text-xs text-fg-muted">고른 plate에서 회수한 세포만 입력하세요. 고르지 않은 plate는 계속 배양합니다.</p>
+        </PlatePicker>
+      )}
       <PlanRecordSection profiles={profiles} culture={culture} stage="freeze" lineId={line.id} records={records} onRecords={setRecords} />
       <ProtocolRunSection line={line} profile={profile} folder="freeze" value={protocolRun} onChange={setProtocolRun} />
       <fieldset className="op-section">
@@ -759,11 +791,16 @@ export function FreezeForm({ line, culture, profiles, initialAt, defaultCellsPer
           <b>3</b>기록
         </legend>
         <label className="mb-3 flex gap-2 text-sm">
-          <input type="checkbox" checked={retainedN > 0 ? false : end} disabled={retainedN > 0} onChange={(e) => setEnd(e.target.checked)} />
-          동결 후 기존 배양 종료
+          <input type="checkbox" checked={endSelected} disabled={retainedN > 0} onChange={(e) => setEnd(e.target.checked)} />
+          {multiPlate ? '동결 후 선택한 plate 종료' : '동결 후 기존 배양 종료'}
         </label>
         {retainedN > 0 && (
           <p className="mb-3 text-xs text-fg-muted">남겨 둔 세포가 있으므로 기존 배양은 활성으로 유지합니다. 새 용기로 계대한 작업은 별도로 기록하세요.</p>
+        )}
+        {multiPlate && sourcePlates.length > 0 && (
+          <p className="mb-3 text-xs text-fg-muted">
+            {remaining.length ? `plate ${remaining.join(', ')}은(는) 활성으로 남습니다.` : '남은 활성 plate가 없어 배양이 동결 완료로 종료됩니다.'}
+          </p>
         )}
         <details className="mb-3">
           <summary className="cursor-pointer text-sm">대표 바이알 해동 확인 계획 (선택)</summary>
@@ -787,7 +824,7 @@ export function FreezeForm({ line, culture, profiles, initialAt, defaultCellsPer
         </Field>
       </fieldset>
       <FormError>{error}</FormError>
-      <button className={primaryBtnCls} disabled={busy || !plan.allocation || plan.allocation.possibleVials < 1}>
+      <button className={primaryBtnCls} disabled={busy || !sourcePlates.length || !plan.allocation || plan.allocation.possibleVials < 1}>
         {busy ? '저장 중…' : `${plan.vials >= 1 ? `${plan.vials} vial ` : ''}동결·배분 저장`}
       </button>
     </form>

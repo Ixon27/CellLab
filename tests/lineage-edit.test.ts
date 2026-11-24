@@ -355,6 +355,44 @@ describe('여러 dish로 나뉜 배양의 plate별 계대·폐기', () => {
     expect(restored.plates.map((p) => p.status)).toEqual(['active', 'active', 'active']);
   });
 
+  it('계대 후 남은 plate 중 일부로 stock을 만들고, 다른 plate를 나중에 계대할 수 있다', async () => {
+    const [parent] = await thaw(await receive(1), [{ vessel: 'T75' }]);
+    const product = (
+      await call<{ id: string }>('/api/lab-products/vessels', 'POST', { label: '100 mm dish', format: '100 mm dish', wellsPerUnit: 1, areaCm2PerWell: 55, sourceLabel: '테스트' })
+    ).data;
+    const url = `/api/cultures/${parent.id}`;
+    expect((await call(url, 'PUT', { vesselUse: { vesselProductId: product.id, usedWells: 3, mediumMl: 30 } })).status).toBe(200);
+    const passage = { at, children: [{ vessel: 'T25' }] };
+    expect((await call(`${url}/passage`, 'POST', { ...passage, sourcePlates: [1] })).status).toBe(201);
+    const freeze = { at: later, vials: 2, location: 'LN2', endCulture: true };
+    expect((await call(`${url}/freeze`, 'POST', { ...freeze, sourcePlates: [] })).status).toBe(400);
+    expect((await call(`${url}/freeze`, 'POST', { ...freeze, sourcePlates: [1] })).status).toBe(400);
+
+    const kept = await call<{ culture: CultureDto }>(`${url}/freeze`, 'POST', { ...freeze, sourcePlates: [2], endCulture: false });
+    expect(kept.status).toBe(201);
+    expect(kept.data.culture.plates.map((p) => p.status)).toEqual(['passaged', 'active', 'active']);
+    const frozen = await call<{ culture: CultureDto; lot: LotDto }>(`${url}/freeze`, 'POST', { ...freeze, sourcePlates: [2] });
+    expect(frozen.status).toBe(201);
+    expect(frozen.data.culture.status).toBe('active');
+    expect(frozen.data.culture.plates.map((p) => p.status)).toEqual(['passaged', 'frozen', 'active']);
+    const record = (await logsOf(parent.id)).find((l) => l.extra.frozenLotId === frozen.data.lot.id)!;
+    const graph = (await call<LineageGraph>('/api/cell-lines/tcmk/lineage')).data;
+    expect(graph.edges.find((e) => e.target === frozen.data.lot.id)).toMatchObject({ kind: 'freeze', sourcePlates: [2], logId: record.id });
+    expect((await call(`${url}/passage`, 'POST', { ...passage, sourcePlates: [2] })).status).toBe(400);
+    const final = await call<{ parent: CultureDto }>(`${url}/passage`, 'POST', { ...passage, at: later, sourcePlates: [3] });
+    expect(final.status).toBe(201);
+    expect(final.data.parent).toMatchObject({ status: 'split', endedAt: later });
+
+    expect((await call(`/api/logs/${record.id}`, 'DELETE')).status).toBe(200);
+    const detail = (await call<{ cultures: CultureDto[]; lots: LotDto[] }>('/api/cell-lines/tcmk')).data;
+    const restored = detail.cultures.find((c) => c.id === parent.id)!;
+    expect(restored).toMatchObject({ status: 'active', endedAt: null });
+    expect(restored.plates.map((p) => p.status)).toEqual(['passaged', 'active', 'passaged']);
+    expect(detail.lots.find((l) => l.id === frozen.data.lot.id)).toBeUndefined();
+    const lastStock = await call<{ culture: CultureDto }>(`${url}/freeze`, 'POST', { ...freeze, sourcePlates: [2] });
+    expect(lastStock.data.culture).toMatchObject({ status: 'frozen', endedAt: later });
+  });
+
   it('plate별 계대는 plate마다 기록·새 배양을 만들고, 한 묶음이라도 틀리면 아무것도 저장하지 않는다', async () => {
     const lot = await receive(1);
     const [parent] = await thaw(lot, [{ vessel: 'T75' }]);

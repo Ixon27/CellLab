@@ -15,6 +15,7 @@ export function QuickRecord({
   lots,
   profiles,
   selected,
+  selectedPlate,
   onSelect,
   onSaved,
   onReceive,
@@ -24,6 +25,7 @@ export function QuickRecord({
   lots: LotDto[];
   profiles: ProfileDto[];
   selected: string | null;
+  selectedPlate?: number;
   onSelect(id: string): void;
   onSaved(): void;
   onReceive(): void;
@@ -78,6 +80,7 @@ export function QuickRecord({
     lot,
     profiles,
     initialAt: at,
+    initialPlate: selectedPlate,
     defaultCellsPerVial: culture ? sourceCellsPerVial(culture.id, cultures, lots) : null,
     onSaved,
     onClose: () => setAction(null),
@@ -105,6 +108,7 @@ export function QuickRecord({
           </optgroup>
         </select>
       </Field>
+      {selectedPlate !== undefined && <p className="cell-help">plate {selectedPlate} 선택 · 계대·동결 창에 적용</p>}
       <Field label="기록 / 작업">
         <select
           className={inputCls}

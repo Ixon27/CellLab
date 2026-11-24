@@ -22,6 +22,7 @@ interface Props {
   profiles: ProfileDto[];
   initialLog?: LogDto;
   initialAt?: string;
+  initialPlate?: number;
   logType?: 'observation' | 'medium_change';
   /** Cells per vial on the stock the culture descends from (prefills freezing). */
   defaultCellsPerVial?: number | null;
@@ -383,7 +384,7 @@ export function PassageDialog(p: Props) {
 }
 export function FreezeDialog(p: Props) {
   return p.culture ? (
-    <Dialog title="초기 스탁 · 동결 배분" width={760} onClose={p.onClose}>
+    <Dialog title="동결 · stock 만들기" width={760} onClose={p.onClose}>
       <FreezeForm
         {...p}
         culture={p.culture}

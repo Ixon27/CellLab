@@ -6,6 +6,31 @@ import { CULTURE_OPERATION_DDL } from './culture-operations-schema';
 
 export const db = new DatabaseSync(PATHS.db);
 
+const culturePlatesDdl = `CREATE TABLE IF NOT EXISTS culture_plates(
+  culture_id TEXT NOT NULL REFERENCES cultures(id) ON DELETE CASCADE,
+  plate_no INTEGER NOT NULL CHECK(plate_no >= 1),
+  status TEXT NOT NULL CHECK(status IN ('passaged','discarded','frozen')),
+  at TEXT NOT NULL,
+  log_id TEXT NOT NULL REFERENCES culture_logs(id) ON DELETE CASCADE,
+  PRIMARY KEY(culture_id, plate_no));`;
+
+function allowFrozenPlates(database: DatabaseSync): void {
+  const table = database.prepare("SELECT sql FROM sqlite_schema WHERE name='culture_plates'").get();
+  if (!table || String(table.sql).includes("'frozen'")) return;
+  database.exec('BEGIN');
+  try {
+    database.exec(`ALTER TABLE culture_plates RENAME TO culture_plates_old;
+      ${culturePlatesDdl}
+      INSERT INTO culture_plates(culture_id,plate_no,status,at,log_id)
+        SELECT culture_id,plate_no,status,at,log_id FROM culture_plates_old;
+      DROP TABLE culture_plates_old;`);
+    database.exec('COMMIT');
+  } catch (error) {
+    database.exec('ROLLBACK');
+    throw error;
+  }
+}
+
 db.exec(`
 PRAGMA busy_timeout=5000;
 PRAGMA journal_mode=WAL;
@@ -83,20 +108,14 @@ CREATE TABLE IF NOT EXISTS culture_log_protocols(
   protocol_id TEXT REFERENCES protocols(id) ON DELETE SET NULL,
   title TEXT NOT NULL, version TEXT NOT NULL, protocol_updated_at TEXT NOT NULL,
   steps TEXT NOT NULL, created_at TEXT NOT NULL);
--- Vessels of a culture that left it on their own (passaged or discarded); vessels without a row are still active.
--- The row goes with the record that changed it, so undoing that record makes the vessel active again.
-CREATE TABLE IF NOT EXISTS culture_plates(
-  culture_id TEXT NOT NULL REFERENCES cultures(id) ON DELETE CASCADE,
-  plate_no INTEGER NOT NULL CHECK(plate_no >= 1),
-  status TEXT NOT NULL CHECK(status IN ('passaged','discarded')),
-  at TEXT NOT NULL,
-  log_id TEXT NOT NULL REFERENCES culture_logs(id) ON DELETE CASCADE,
-  PRIMARY KEY(culture_id, plate_no));
+-- A vessel without a row is still active. Undoing its operation deletes the row by cascade.
+${culturePlatesDdl}
 -- Earlier per-line SOP copies become that line's general protocols.
 INSERT OR IGNORE INTO cell_protocols(protocol_id,cell_line_id,folder,sort)
   SELECT protocol_id,cell_line_id,'general',0 FROM protocol_copies
   WHERE cell_line_id IS NOT NULL AND cell_line_id IN (SELECT id FROM cell_lines);
 `);
+allowFrozenPlates(db);
 // Cultures ended by hand before the end became a record get that record, so every end can be edited or undone from it.
 // A culture discarded plate by plate already has its plate-discard record.
 db.exec(`INSERT INTO culture_logs(id,culture_id,at,type,extra,note,created_at)

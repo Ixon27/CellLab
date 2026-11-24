@@ -364,7 +364,14 @@ html[data-desktop='darwin'] .cell-titlebar-tools {
   color: var(--pr-fg-muted);
   font-size: 11px;
 }
-.cell-graph-plate.status-passaged span {
+.cell-graph-plate.is-selected {
+  border-style: solid;
+  border-color: var(--pr-accent);
+  outline: 1px solid var(--pr-accent);
+  outline-offset: 1px;
+}
+.cell-graph-plate.status-passaged span,
+.cell-graph-plate.status-frozen span {
   color: var(--pr-accent);
 }
 .cell-graph-plate.status-discarded {

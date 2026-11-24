@@ -89,6 +89,7 @@ function JournalNote({ log }: { log: LogDto }) {
     log.cellsPerMl !== null && `생세포 ${formatCount(log.cellsPerMl)} cells/mL`,
     log.viabilityPct !== null && `생존율 ${log.viabilityPct}%`,
     log.passage?.splitRatio && `분주 ${log.passage.splitRatio}`,
+    log.extra.sourcePlates && `plate ${log.extra.sourcePlates.split(',').join(', ')}`,
     log.passage?.leftoverHandling && `남은 세포 ${LEFTOVER_LABELS[log.passage.leftoverHandling]}`,
     log.protocolRun?.title,
   ].filter(Boolean);
@@ -140,6 +141,7 @@ function LineageInner({ line, focusNodeId, onSelectNode, onChanged, externalRevi
   const [logs, setLogs] = useState<CellLineLogDto[]>([]);
   const [hideEnded, setHideEnded] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  const [plateSelection, setPlateSelection] = useState<{ cultureId: string; no: number } | null>(null);
   const [filterCulture, setFilterCulture] = useState('');
   const [filterType, setFilterType] = useState('');
   const [dialog, setDialog] = useState<'lot' | 'culture' | null>(null);
@@ -182,18 +184,27 @@ function LineageInner({ line, focusNodeId, onSelectNode, onChanged, externalRevi
   }, [externalRevision, load]);
   const selected =
     focusNodeId ?? detail?.cultures.find((c) => c.status === 'active')?.id ?? detail?.cultures[0]?.id ?? detail?.lots[0]?.id ?? null;
+  const lot = detail?.lots.find((l) => l.id === selected);
+  const culture = detail?.cultures.find((c) => c.id === selected);
+  const selectedPlate = culture?.status === 'active' && plateSelection?.cultureId === culture.id
+    && culture.plates.some((p) => p.no === plateSelection.no && p.status === 'active')
+    ? plateSelection.no : undefined;
+  const selectNode = (id: string | null) => {
+    setPlateSelection(null);
+    onSelectNode(id);
+  };
   const visible = useMemo(() => graph.nodes.filter((n) => !hideEnded || n.kind === 'lot' || n.status === 'active'), [graph, hideEnded]);
   const multiPlate = useMemo(
     () => new Map((detail?.cultures ?? []).filter((c) => c.plates.length > 1).map((c) => [c.id, c.plates])),
     [detail],
   );
-  // Expanded cultures show each vessel; a passage from chosen vessels then leaves from those vessels.
+  // Expanded cultures show each vessel; operation edges then leave from the vessels actually used.
   const { plateNodes, flowEdges, plateLinks } = useMemo(() => {
     const plateNodes = visible.flatMap((n) =>
       expanded.has(n.id) ? (multiPlate.get(n.id) ?? []).map((p) => ({ id: `${n.id}#${p.no}`, cultureId: n.id, plate: p })) : [],
     );
     const flowEdges = graph.edges.flatMap((e) => {
-      if (e.kind !== 'passage' || !e.sourcePlates.length || !expanded.has(e.source)) return [{ edge: e, source: e.source, id: e.id }];
+      if (!e.sourcePlates.length || !expanded.has(e.source) || !multiPlate.has(e.source)) return [{ edge: e, source: e.source, id: e.id }];
       return e.sourcePlates.map((no) => ({ edge: e, source: `${e.source}#${no}`, id: `${e.id}#${no}` }));
     });
     const plateLinks = plateNodes.map((p) => [p.cultureId, p.id] as [string, string]);
@@ -238,7 +249,7 @@ function LineageInner({ line, focusNodeId, onSelectNode, onChanged, externalRevi
         return {
           id: work.id,
           type: 'lineage',
-          selected: selected === work.id,
+          selected: selected === work.id && selectedPlate === undefined,
           position: positions.get(work.id)!,
           data: {
             work,
@@ -255,13 +266,13 @@ function LineageInner({ line, focusNodeId, onSelectNode, onChanged, externalRevi
         (p): PlateNode => ({
           id: p.id,
           type: 'plate',
-          selected: false,
+          selected: selected === p.cultureId && selectedPlate === p.plate.no,
           position: positions.get(p.id)!,
           data: { cultureId: p.cultureId, no: p.plate.no, status: p.plate.status },
         }),
       ),
     ],
-    [visible, plateNodes, detail, selected, positions, multiPlate, expanded, toggle],
+    [visible, plateNodes, detail, selected, selectedPlate, positions, multiPlate, expanded, toggle],
   );
   const edges = useMemo<FlowEdge[]>(
     () => [
@@ -307,8 +318,6 @@ function LineageInner({ line, focusNodeId, onSelectNode, onChanged, externalRevi
   useEffect(() => {
     if (focusNodeId && detail && !detail.lots.some((l) => l.id === focusNodeId) && !detail.cultures.some((c) => c.id === focusNodeId)) onSelectNode(null);
   }, [focusNodeId, detail, onSelectNode]);
-  const lot = detail?.lots.find((l) => l.id === selected);
-  const culture = detail?.cultures.find((c) => c.id === selected);
   const dialogProps = { line, profiles: detail?.profiles ?? [], onClose: () => setDialog(null), onSaved: changed };
   const ws: LineageWorkspace = { line, profiles: detail?.profiles ?? [], cultures: detail?.cultures ?? [], lots: detail?.lots ?? [], logs };
   const daily = logs.filter(
@@ -366,7 +375,11 @@ function LineageInner({ line, focusNodeId, onSelectNode, onChanged, externalRevi
                 nodeTypes={nodeTypes}
                 nodesDraggable={false}
                 nodesConnectable={false}
-                onNodeClick={(_, n) => onSelectNode(n.type === 'plate' ? n.data.cultureId : n.id)}
+                onNodeClick={(_, n) => {
+                  if (n.type !== 'plate') return selectNode(n.id);
+                  setPlateSelection(n.data.status === 'active' ? { cultureId: n.data.cultureId, no: n.data.no } : null);
+                  onSelectNode(n.data.cultureId);
+                }}
                 onEdgeClick={(_, e) => {
                   if (e.data?.logId) setEditingOperation(e.data.logId);
                 }}
@@ -425,12 +438,12 @@ function LineageInner({ line, focusNodeId, onSelectNode, onChanged, externalRevi
                             </th>
                           </tr>
                         )}
-                        <tr className={selected === l.cultureId ? 'is-selected' : ''} onClick={() => onSelectNode(l.cultureId)}>
+                        <tr className={selected === l.cultureId ? 'is-selected' : ''} onClick={() => selectNode(l.cultureId)}>
                           <td className="cell-log-date" title={new Date(l.at).toLocaleString('ko-KR')}>
                             <time dateTime={l.at}>{time}</time>
                           </td>
                           <td className="cell-log-culture">
-                            <button className="cell-text-button" onClick={() => onSelectNode(l.cultureId)}>
+                            <button className="cell-text-button" onClick={() => selectNode(l.cultureId)}>
                               {l.cultureLabel}
                             </button>
                             {!l.cultureLabel.includes(`P${l.culturePassage}`) && <span className="cell-chip">P{l.culturePassage}</span>}
@@ -466,7 +479,8 @@ function LineageInner({ line, focusNodeId, onSelectNode, onChanged, externalRevi
             lots={detail?.lots ?? []}
             profiles={detail?.profiles ?? []}
             selected={selected}
-            onSelect={onSelectNode}
+            selectedPlate={selectedPlate}
+            onSelect={selectNode}
             onSaved={changed}
             onReceive={() => setDialog('culture')}
           />
@@ -476,8 +490,9 @@ function LineageInner({ line, focusNodeId, onSelectNode, onChanged, externalRevi
               ws={ws}
               lot={lot}
               culture={culture}
-              onSelect={onSelectNode}
-              onClose={() => onSelectNode(null)}
+              selectedPlate={selectedPlate}
+              onSelect={selectNode}
+              onClose={() => selectNode(null)}
               onChanged={changed}
             />
           ) : (
@@ -510,9 +525,9 @@ function LineageInner({ line, focusNodeId, onSelectNode, onChanged, externalRevi
             </thead>
             <tbody>
               {detail?.lots.map((l) => (
-                <tr key={l.id} className={selected === l.id ? 'is-selected' : ''} onClick={() => onSelectNode(l.id)}>
+                <tr key={l.id} className={selected === l.id ? 'is-selected' : ''} onClick={() => selectNode(l.id)}>
                   <td>
-                    <button className="cell-text-button cell-stock-label" onClick={() => onSelectNode(l.id)}>
+                    <button className="cell-text-button cell-stock-label" onClick={() => selectNode(l.id)}>
                       {l.label}
                     </button>
                   </td>
@@ -544,7 +559,7 @@ function LineageInner({ line, focusNodeId, onSelectNode, onChanged, externalRevi
                       >
                         해동
                       </button>
-                      <button className={smallBtnCls} onClick={() => onSelectNode(l.id)}>
+                      <button className={smallBtnCls} onClick={() => selectNode(l.id)}>
                         정보 · 수정
                       </button>
                     </div>

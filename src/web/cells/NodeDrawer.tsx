@@ -43,6 +43,7 @@ export function NodeDrawer({
   ws,
   lot,
   culture,
+  selectedPlate,
   onSelect,
   onClose,
   onChanged,
@@ -50,6 +51,7 @@ export function NodeDrawer({
   ws: LineageWorkspace;
   lot?: LotDto;
   culture?: CultureDto;
+  selectedPlate?: number;
   onSelect(id: string): void;
   onClose(): void;
   onChanged(): void;
@@ -95,6 +97,7 @@ export function NodeDrawer({
     lot,
     culture,
     profiles,
+    initialPlate: selectedPlate,
     defaultCellsPerVial: culture ? sourceCellsPerVial(culture.id, ws.cultures, ws.lots) : null,
     onClose: () => setDialog(null),
     onSaved: onChanged,
@@ -168,6 +171,7 @@ export function NodeDrawer({
         )}
         <li className="cell-chip">P{node.passage ?? '미정'}</li>
         {culture && <li className="cell-chip">{culture.vessel}</li>}
+        {selectedPlate !== undefined && <li className="cell-chip" data-tone="accent">plate {selectedPlate} 선택</li>}
       </ul>
       <dl className="cell-sel-meta">
         <div>
@@ -197,7 +201,7 @@ export function NodeDrawer({
           </button>
           {(['passage', 'freeze', 'end'] as const).map((kind, i) => (
             <button key={kind} className={smallBtnCls} onClick={() => setDialog(kind)}>
-              {['계대', '동결', '종료'][i]}
+              {i < 2 && selectedPlate !== undefined ? `plate ${selectedPlate} ${['계대', '동결'][i]}` : ['계대', '동결', '종료'][i]}
             </button>
           ))}
         </div>
@@ -403,7 +407,7 @@ const CULTURE_TONES: Record<CultureDto['status'], 'success' | 'accent' | 'danger
   discarded: 'danger',
   contaminated: 'danger',
 };
-const PLATE_TONES: Record<PlateStatus, 'success' | 'accent' | 'danger'> = { active: 'success', passaged: 'accent', discarded: 'danger' };
+const PLATE_TONES: Record<PlateStatus, 'success' | 'accent' | 'danger'> = { active: 'success', passaged: 'accent', discarded: 'danger', frozen: 'accent' };
 const DAY = 86_400_000;
 const monthDay = (d: Date) => `${d.getMonth() + 1}.${d.getDate()}`;
 const pad2 = (n: number) => String(n).padStart(2, '0');
