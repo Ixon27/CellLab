@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { CellLineDto, ProfileDto } from '../../shared/cell-line';
-import type { CultureProfileFields } from '../../shared/culture';
+import type { SopValues } from '../../shared/sop';
 import {
   PROTOCOL_FOLDERS,
   PROTOCOL_FOLDER_LABELS,
@@ -101,7 +101,7 @@ export function ProtocolRunSection({
   onChange(next: ProtocolRunEdit): void;
   saved?: ProtocolRun | null;
   /** This run's own values (see performedFields), shown in the steps as they will be saved. */
-  performed?: CultureProfileFields;
+  performed?: SopValues;
 }) {
   const { items, error } = useCellProtocols(line.id);
   const editingRecord = saved !== undefined;

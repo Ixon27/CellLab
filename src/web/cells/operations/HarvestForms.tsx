@@ -320,6 +320,7 @@ export function PassageForm({ line, culture, profiles, initialAt, initialPlate, 
     splitRatio: common.ratio ?? commonDerived.auto.text,
     dissociationReagent: reagent,
     confluencyPct: numberOrNull(common.confluency),
+    recoveredLiveCells: commonDerived.recoveredN,
     seedingDensitiesPerCm2: commonDerived.children.map((c, i) => {
       const area = commonDerived.childAreas[i];
       return area && Number(c.cells) > 0 ? Number(c.cells) / area : null;
@@ -689,7 +690,13 @@ export function FreezeForm({ line, culture, profiles, initialAt, initialPlate, d
   const plan = planFreeze({ availableCells: recoveredN, retainedCells: retainedN, suspensionCellsPerMl: suspensionN, draft: stock, line });
   const performed = performedFields({
     confluencyPct: numberOrNull(confluency),
+    recoveredLiveCells: recoveredN,
     freezingMedium: stock.medium.trim() ? stockMediumText(stock, plan) : null,
+    vials: plan.vials,
+    cellsPerVial: plan.targetCellsPerVial,
+    volumePerVialMl: numberOrNull(stock.volumeMl),
+    suspensionPerVialMl: plan.mix?.suspensionPerVialMl,
+    freezingMediumPerVialMl: plan.mix?.freezingMediumPerVialMl,
   });
   async function save() {
     setBusy(true);

@@ -6,9 +6,10 @@ import {
   validateProtocolRunEdit,
   validateProtocolRunInput,
 } from '../shared/protocol-run';
+import type { FreezePlanRecord } from '../shared/culture-operations';
 import type { ProtocolRun, ProtocolRunInput } from '../shared/protocol-run';
 import type { CultureProfileFields } from '../shared/culture';
-import { performedFields, previewSop } from '../shared/sop';
+import { performedFields, previewSop, type SopValues } from '../shared/sop';
 import type { ProfileRow } from './cell-lines';
 import { activeProfileRow, getLineRow } from './cell-lines';
 import { db, now, parseJsonColumn } from './db';
@@ -22,10 +23,10 @@ interface ProtocolRow {
   updated_at: string;
 }
 
-/** What a saved passage/freeze record actually used: ratio, reagent, confluency, seeding density, freezing medium. */
-export function performedOfLog(logId: string): CultureProfileFields {
-  const row = db.prepare('SELECT type,extra,confluency_pct FROM culture_logs WHERE id=?').get(logId) as
-    | { type: string; extra: string; confluency_pct: number | null }
+/** What a saved passage/freeze record actually used: ratio, reagent, counts, seeding density, vials, freezing medium. */
+export function performedOfLog(logId: string): SopValues {
+  const row = db.prepare('SELECT type,extra,confluency_pct,total_cells FROM culture_logs WHERE id=?').get(logId) as
+    | { type: string; extra: string; confluency_pct: number | null; total_cells: number | null }
     | undefined;
   if (!row) return {};
   const extra = parseJsonColumn<Record<string, string>>(row.extra, {});
@@ -38,14 +39,29 @@ export function performedOfLog(logId: string): CultureProfileFields {
       splitRatio: extra.splitRatio,
       dissociationReagent: extra.dissociationReagent,
       confluencyPct: row.confluency_pct,
+      recoveredLiveCells: row.total_cells,
       seedingDensitiesPerCm2: densities,
     });
   }
   if (row.type === 'freeze') {
     const lot = extra.frozenLotId
-      ? (db.prepare('SELECT freezing_medium FROM cryo_lots WHERE id=?').get(extra.frozenLotId) as { freezing_medium: string | null } | undefined)
+      ? (db
+          .prepare('SELECT l.freezing_medium,l.vials_initial,l.cells_per_vial,d.freeze_plan FROM cryo_lots l LEFT JOIN cryo_lot_details d ON d.lot_id=l.id WHERE l.id=?')
+          .get(extra.frozenLotId) as
+          | { freezing_medium: string | null; vials_initial: number; cells_per_vial: number | null; freeze_plan: string | null }
+          | undefined)
       : undefined;
-    return performedFields({ confluencyPct: row.confluency_pct, freezingMedium: lot?.freezing_medium });
+    const plan = parseJsonColumn<FreezePlanRecord | null>(lot?.freeze_plan ?? null, null);
+    return performedFields({
+      confluencyPct: row.confluency_pct,
+      recoveredLiveCells: row.total_cells,
+      freezingMedium: lot?.freezing_medium,
+      vials: lot?.vials_initial,
+      cellsPerVial: lot?.cells_per_vial,
+      volumePerVialMl: plan?.volumePerVialMl,
+      suspensionPerVialMl: plan?.mix?.suspensionPerVialMl,
+      freezingMediumPerVialMl: plan?.mix?.freezingMediumPerVialMl,
+    });
   }
   return {};
 }
@@ -140,12 +156,14 @@ export function editProtocolRun(logId: string, cultureId: string, raw: unknown):
  * its saved protocol steps. Only values the run itself supplied are replaced, so the rest stays as performed. A value
  * is replaced only as a whole token (1:7 never matches inside 1:70); a confluency only where a % follows it.
  */
-export function refreshPerformedValues(logId: string, before: CultureProfileFields): void {
+export function refreshPerformedValues(logId: string, before: SopValues): void {
   const after = performedOfLog(logId);
   const swaps = Object.entries(before).flatMap(([key, old]) => {
     const from = String(old ?? '');
-    const to = String(after[key as keyof CultureProfileFields] ?? '');
-    if (!from || !to || from === to) return [];
+    const to = String(after[key] ?? '');
+    // A bare number (a vial count) could be any number in the text; only a confluency is placed by its % sign.
+    const bare = /^[\d.]+$/.test(from) && key !== 'subculture_confluency_pct';
+    if (!from || !to || from === to || bare) return [];
     const escaped = from.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const tail = key === 'subculture_confluency_pct' ? '(?=\\s*%)' : '(?![\\w.:])';
     return [{ pattern: new RegExp(`(?<![\\w.:])${escaped}${tail}`, 'g'), to }];

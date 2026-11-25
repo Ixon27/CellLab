@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { CellLineDto, ProfileDto } from '../../shared/cell-line';
-import type { CultureProfileFields } from '../../shared/culture';
 import type { CellProtocolDto } from '../../shared/protocol-run';
-import { previewSop, type SopPreview } from '../../shared/sop';
+import { previewSop, type SopPreview, type SopValues } from '../../shared/sop';
 import { api } from '../api';
 
 export function useCellProtocols(lineId: string) {
@@ -26,6 +25,6 @@ export function useCellProtocols(lineId: string) {
  * The protocol text as performed: condition variables filled from the condition set, with this run's own values
  * (split ratio, seeding density, …) in place of the set's. Mirrors the server's protocol-run snapshot.
  */
-export function fillProtocol(body: string, line: CellLineDto, profile: ProfileDto | null, performed: CultureProfileFields = {}): SopPreview {
+export function fillProtocol(body: string, line: CellLineDto, profile: ProfileDto | null, performed: SopValues = {}): SopPreview {
   return previewSop(body, { name: line.name, max_passage: line.maxPassage }, { ...profile?.fields, ...performed });
 }

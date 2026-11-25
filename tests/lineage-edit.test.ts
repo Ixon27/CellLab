@@ -231,6 +231,28 @@ describe('기록 뒤 프로토콜 변경', () => {
       '90초 둔다.',
     ]);
   });
+
+  it('동결 프로토콜에는 그 동결의 바이알 수·바이알당 세포 수·부피·동결 배지가 들어간다', async () => {
+    const bodyMd = '1. 회수한 {{recovered_cells}} 중 {{frozen_cells}}을 {{freezing_medium}}에 현탁한다.\n2. {{freeze_vials}}개 바이알에 {{cells_per_vial}}씩 {{volume_per_vial}} 분주한다(총 {{total_freeze_volume}}).\n';
+    const protocol = (await call<{ id: string }>('/api/cell-lines/tcmk/protocols', 'POST', { folder: 'freeze', title: '동결', bodyMd })).data;
+    const updatedAt = (db.prepare('SELECT updated_at FROM protocols WHERE id=?').get(protocol.id) as { updated_at: string }).updated_at;
+    const [culture] = await thaw(await receive(1), [{ vessel: 'T75' }]);
+    const plan = { recoveredLiveCells: 3_500_000, retainedCells: 0, targetCellsPerVial: 1_000_000, volumePerVialMl: 1, desiredVials: 3 };
+    const res = await call(`/api/cultures/${culture.id}/freeze`, 'POST', {
+      at,
+      vials: 3,
+      plan,
+      location: 'LN2',
+      freezingMedium: 'CryoStor CS10',
+      protocolRun: { protocolId: protocol.id, protocolUpdatedAt: updatedAt, deviations: [] },
+    });
+    expect(res.status).toBe(201);
+    const record = (await logsOf(culture.id)).find((l) => l.type === 'freeze')!;
+    expect(record.protocolRun!.steps.map((s) => s.original)).toEqual([
+      '회수한 3.50 × 10⁶ cells 중 3.00 × 10⁶ cells을 CryoStor CS10에 현탁한다.',
+      '3개 바이알에 1.00 × 10⁶ cells씩 1 mL 분주한다(총 3 mL).',
+    ]);
+  });
 });
 
 describe('링크가 없던 이전 기록', () => {

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { EditorContent, useEditor } from '@tiptap/react';
 import { EditorState } from '@tiptap/pm/state';
 import { useLocation } from 'wouter';
+import { SOP_VARIABLES } from '../../shared/sop';
 import { prepareProtocolDocument, protocolDocumentExtensions, serializeProtocolDocument, type PreparedProtocolDocument } from './protocol-document-codec';
 import { protocolStepTransaction, type ProtocolStepAction } from './protocol-document-steps';
 import './protocol-document.css';
@@ -202,9 +203,12 @@ export function ProtocolDocumentEditor({ value, onChange, cellLineId }: Protocol
           editor?.chain().focus().insertContent({ type: 'protocolVariable', attrs: { raw: `{{${key}}}`, key } }).run();
           setVariable(''); setPanel(null);
         }}>
-          <label>변수 키 <input autoFocus aria-label="조건 변수 키" value={variable} onChange={(event) => setVariable(event.target.value)} placeholder="예: base_medium" /></label>
+          <label>변수 키 <input autoFocus aria-label="조건 변수 키" list="protocol-variable-keys" value={variable} onChange={(event) => setVariable(event.target.value)} placeholder="예: base_medium" /></label>
+          <datalist id="protocol-variable-keys">
+            {SOP_VARIABLES.map((v) => <option key={v.key} value={v.key}>{v.label}</option>)}
+          </datalist>
           <button type="submit" disabled={!variable.trim() || /[{}\r\n]/.test(variable)}>변수 넣기</button>
-          <span>실제 값이 아닌 배양 조건 연결을 넣습니다.</span>
+          <span>실제 값이 아닌 배양 조건 연결을 넣습니다. 바이알 수·세포 수 같은 작업 값은 그 작업 기록에서 채워집니다.</span>
         </form>}
         <div className="protocol-document-paper"><EditorContent editor={editor} /></div>
         <p className="protocol-document-footnote">조건 칩은 클릭해서 연결 조건을 확인합니다. 목록 안에서 Tab / Shift+Tab으로 들여쓰기를 조절할 수 있습니다. 문서 수정 후에는 Markdown 서식 표기가 정리될 수 있습니다.</p>
