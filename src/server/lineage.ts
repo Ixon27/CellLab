@@ -446,11 +446,12 @@ export function updateLog(logId: string, b: LineageInput) {
       if (b.type === 'passage' || b.type === 'freeze') throw new HttpError(400, '계대·동결 기록은 해당 작업으로 추가하세요');
     }
     const system = Object.fromEntries(Object.entries(stored.extra).filter(([k]) => SYSTEM_EXTRA_KEYS.includes(k)));
-    if (row.type === 'passage') {
+    if (row.type === 'passage' || row.type === 'freeze') {
       for (const [key, label] of [
-        ['dissociationReagent', '계대 시약'],
+        ['dissociationReagent', '해리 시약'],
         ['splitRatio', '분주 비율'],
       ] as const) {
+        if (row.type === 'freeze' && key === 'splitRatio') continue;
         if (b[key] === undefined) continue;
         const value = text(b[key], label, false, 200);
         if (value) system[key] = value;
@@ -913,7 +914,7 @@ function passageWithin(cultureId: string, b: LineageInput) {
     const planned = numeric(record(freeze.plan, '동결 계획').recoveredLiveCells, '동결할 세포 수');
     if (leftover !== null && planned > leftover * (1 + 1e-9) + 1e-6)
       throw new HttpError(400, `동결할 세포 수가 접종하고 남은 세포(${Math.round(leftover).toLocaleString('ko-KR')})보다 많습니다`);
-    frozenLot = freezeWithin(cultureId, { ...freeze, at, endCulture: false, sourcePlates }).lot;
+    frozenLot = freezeWithin(cultureId, { ...freeze, at, endCulture: false, sourcePlates, dissociationReagent: reagent }).lot;
   }
   const passageLog = insertLog(
     cultureId,
@@ -990,6 +991,7 @@ function freezeWithin(cultureId: string, b: LineageInput): { lot: LotDto; cultur
   if (culture.status !== 'active') throw new HttpError(409, '이미 종료된 배양입니다');
   const at = eventTime(b.at);
   const end = flag(b.endCulture, false);
+  const reagent = text(b.dissociationReagent, '해리 시약', false, 200);
   const plates = toCultureDto(culture).plates;
   const activePlates = plates.filter((p) => p.status === 'active').map((p) => p.no);
   const sourcePlates = b.sourcePlates == null ? activePlates : platesFrom(b.sourcePlates, activePlates, plates.length, '동결');
@@ -1066,7 +1068,12 @@ function freezeWithin(cultureId: string, b: LineageInput): { lot: LotDto; cultur
       viabilityPct: b.viabilityPct,
       totalCells: freezePlan?.recoveredLiveCells ?? b.totalCells,
       note: [`${lot.vialsInitial} vial 동결 · ${lot.location}`, note].filter(Boolean).join('\n\n'),
-      extra: { frozenLotId: lot.id, ...count, ...(plates.length > 1 ? { sourcePlates: sourcePlates.join(',') } : {}) },
+      extra: {
+        frozenLotId: lot.id,
+        ...count,
+        ...(plates.length > 1 ? { sourcePlates: sourcePlates.join(',') } : {}),
+        ...(reagent ? { dissociationReagent: reagent } : {}),
+      },
     },
     { internal: true },
   );

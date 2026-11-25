@@ -56,6 +56,7 @@ export function performedOfLog(logId: string): SopValues {
       confluencyPct: row.confluency_pct,
       recoveredLiveCells: row.total_cells,
       freezingMedium: lot?.freezing_medium,
+      dissociationReagent: extra.dissociationReagent,
       vials: lot?.vials_initial,
       cellsPerVial: lot?.cells_per_vial,
       volumePerVialMl: plan?.volumePerVialMl,

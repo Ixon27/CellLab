@@ -233,7 +233,7 @@ describe('기록 뒤 프로토콜 변경', () => {
   });
 
   it('동결 프로토콜에는 그 동결의 바이알 수·바이알당 세포 수·부피·동결 배지가 들어간다', async () => {
-    const bodyMd = '1. 회수한 {{recovered_cells}} 중 {{frozen_cells}}을 {{freezing_medium}}에 현탁한다.\n2. {{freeze_vials}}개 바이알에 {{cells_per_vial}}씩 {{volume_per_vial}} 분주한다(총 {{total_freeze_volume}}).\n';
+    const bodyMd = '1. {{dissociation_reagent}}로 탈착한다.\n2. 회수한 {{recovered_cells}} 중 {{frozen_cells}}을 {{freezing_medium}}에 현탁한다.\n3. {{freeze_vials}}개 바이알에 {{cells_per_vial}}씩 {{volume_per_vial}} 분주한다(총 {{total_freeze_volume}}).\n';
     const protocol = (await call<{ id: string }>('/api/cell-lines/tcmk/protocols', 'POST', { folder: 'freeze', title: '동결', bodyMd })).data;
     const updatedAt = (db.prepare('SELECT updated_at FROM protocols WHERE id=?').get(protocol.id) as { updated_at: string }).updated_at;
     const [culture] = await thaw(await receive(1), [{ vessel: 'T75' }]);
@@ -244,14 +244,19 @@ describe('기록 뒤 프로토콜 변경', () => {
       plan,
       location: 'LN2',
       freezingMedium: 'CryoStor CS10',
+      dissociationReagent: 'TrypLE Express',
       protocolRun: { protocolId: protocol.id, protocolUpdatedAt: updatedAt, deviations: [] },
     });
     expect(res.status).toBe(201);
     const record = (await logsOf(culture.id)).find((l) => l.type === 'freeze')!;
     expect(record.protocolRun!.steps.map((s) => s.original)).toEqual([
+      'TrypLE Express로 탈착한다.',
       '회수한 3.50 × 10⁶ cells 중 3.00 × 10⁶ cells을 CryoStor CS10에 현탁한다.',
       '3개 바이알에 1.00 × 10⁶ cells씩 1 mL 분주한다(총 3 mL).',
     ]);
+    const edited = await call<LogDto>(`/api/logs/${record.id}`, 'PUT', { dissociationReagent: 'Accutase', protocolRun: { deviations: [] } });
+    expect(edited.data.extra.dissociationReagent).toBe('Accutase');
+    expect(edited.data.protocolRun!.steps[0].original).toBe('Accutase로 탈착한다.');
   });
 });
 

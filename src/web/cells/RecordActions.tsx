@@ -156,7 +156,7 @@ export function OperationLogDialog({
   const [at, setAt] = useState(() => localInput(log.at));
   const [note, setNote] = useState(log.note);
   const [endStatus, setEndStatus] = useState<EndStatus>(isEndStatus(log.extra.endStatus) ? log.extra.endStatus : 'harvested');
-  const [reagent, setReagent] = useState(log.passage?.dissociationReagent ?? '');
+  const [reagent, setReagent] = useState(log.passage?.dissociationReagent ?? log.extra.dissociationReagent ?? '');
   const [ratio, setRatio] = useState(log.passage?.splitRatio ?? '');
   const [confluency, setConfluency] = useState(String(log.confluencyPct ?? ''));
   const [totalCells, setTotalCells] = useState(String(log.totalCells ?? ''));
@@ -185,6 +185,7 @@ export function OperationLogDialog({
         });
       }
       if (op === 'passage') Object.assign(body, { dissociationReagent: reagent, splitRatio: ratio });
+      if (op === 'freeze') body.dissociationReagent = reagent;
       if (op === 'end') body.endStatus = endStatus;
       await api(`/api/logs/${log.id}`, { method: 'PUT', json: body });
       onSaved();
@@ -241,6 +242,11 @@ export function OperationLogDialog({
             <input className={inputCls} maxLength={120} value={ratio} onChange={(e) => setRatio(e.target.value)} />
           </Field>
         </FieldRow>
+      )}
+      {op === 'freeze' && (
+        <Field label="사용한 해리 시약·농도">
+          <input className={inputCls} maxLength={200} value={reagent} onChange={(e) => setReagent(e.target.value)} />
+        </Field>
       )}
       {(op === 'passage' || op === 'freeze') && (
         <>

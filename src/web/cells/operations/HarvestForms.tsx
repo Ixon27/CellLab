@@ -661,6 +661,7 @@ function PassageDraftFields({
 export function FreezeForm({ line, culture, profiles, initialAt, initialPlate, defaultCellsPerVial, onSaved }: HarvestProps) {
   const [at, setAt] = useState(() => localInput(initialAt ?? Date.now()));
   const [confluency, setConfluency] = useState('');
+  const [reagent, setReagent] = useState('');
   const [counter, setCounter] = useState<CounterDraft>(emptyCounter);
   const [recovered, setRecovered] = useState('');
   const [suspension, setSuspension] = useState('');
@@ -690,6 +691,7 @@ export function FreezeForm({ line, culture, profiles, initialAt, initialPlate, d
   const plan = planFreeze({ availableCells: recoveredN, retainedCells: retainedN, suspensionCellsPerMl: suspensionN, draft: stock, line });
   const performed = performedFields({
     confluencyPct: numberOrNull(confluency),
+    dissociationReagent: reagent,
     recoveredLiveCells: recoveredN,
     freezingMedium: stock.medium.trim() ? stockMediumText(stock, plan) : null,
     vials: plan.vials,
@@ -712,6 +714,7 @@ export function FreezeForm({ line, culture, profiles, initialAt, initialPlate, d
         json: {
           at: isoFromInput(at),
           confluencyPct: optionalNumber(confluency, 'Confluency'),
+          dissociationReagent: reagent,
           viabilityPct,
           cellsPerMl: suspensionN,
           count: counted?.extras ?? (numberOrNull(counter.countSuspensionMl) ? { countSuspensionMl: Number(counter.countSuspensionMl) } : null),
@@ -757,6 +760,15 @@ export function FreezeForm({ line, culture, profiles, initialAt, initialPlate, d
         <FieldRow>
           <Field label="동결 일시">
             <input required type="datetime-local" className={inputCls} value={at} onChange={(e) => setAt(e.target.value)} />
+          </Field>
+          <Field label="사용한 해리 시약·농도">
+            <input
+              maxLength={200}
+              className={inputCls}
+              value={reagent}
+              onChange={(e) => setReagent(e.target.value)}
+              placeholder="비우면 배양 조건의 계대 시약이 프로토콜에 들어갑니다"
+            />
           </Field>
           <Field label="동결 직전 confluency (%)">
             <input type="number" min="0" max="100" step="any" className={inputCls} value={confluency} onChange={(e) => setConfluency(e.target.value)} />
