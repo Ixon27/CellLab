@@ -1,6 +1,6 @@
 {
   "name": "cell-lab",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "type": "module",
   "description": "세포 stock·계보, 배양 조건, Bradford 정량, Western blot 기록을 한곳에서 관리하는 로컬 데스크톱 앱.",
