@@ -31,7 +31,7 @@ def run(cache,out):
             for i,ct in enumerate(types):
                 pooled=np.delete(response,i,axis=0).mean(axis=0)
                 for direction,sign in [('Up',1),('Down',-1)]:
-                    for model,score in [('type',response[i]),('pooled',pooled)]:
+                    for model,score in [('type',response[i]),('pooled',pooled),('half_pool',(response[i]+pooled)/2)]:
                         # Gene symbol breaks score ties. Top 100 fixed without target ranking.
                         shortlist=set(symbols[np.lexsort((symbols,-sign*score))[:100]])
                         for sub in TYPES[ct]:

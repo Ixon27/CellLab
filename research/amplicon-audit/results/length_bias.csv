@@ -1,0 +1,4 @@
+dataset,n_taxa,spearman_len_vs_log2ratio,p
+mock-12,13,0.1543033499620919,0.6147373473434844
+mock-24,3,,
+mock-25,3,,

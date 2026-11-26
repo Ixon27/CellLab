@@ -1,0 +1,4 @@
+dataset,marker,max_ee,min_count,headline,pairs,trunc_ok,merged,merged_frac_of_pairs,merged_frac_of_trunc_ok,reads_after_ee_and_min_count,frac_exact,frac_near,frac_ambiguous,frac_chimera_like,frac_other,frac_no_seed,frac_singleton_not_aligned,n_other_variants,n_chimera_like_variants,expected_taxa,detected_ge1,detected_ge10,bray_curtis_taxon,median_abs_log2_ratio,max_abs_log2_ratio
+mock-12,16S V4,2.0,2,True,20000,20000,16516,0.8258,0.8258,13730,0.7852876911871813,0.2143481427530954,0.0,0.0,0.0003641660597232338,0.0,0.0,2,0,26,13,9,0.8053916212404372,3.5633662704716618,7.98963102517376
+mock-24,ITS2 (fungal),2.0,2,True,20000,16840,343,0.01715,0.02036817102137767,32,0.0625,0.8125,0.0,0.0,0.125,0.0,0.0,2,0,8,3,1,0.47890134705774245,0.7300244898529779,0.978616507111203
+mock-25,ITS2 (fungal),2.0,2,True,20000,16822,540,0.027,0.03210082035429794,14,0.5714285714285714,0.42857142857142855,0.0,0.0,0.0,0.0,0.0,0,0,8,3,0,0.16869686488019733,0.2700604753131694,1.7155995316797896

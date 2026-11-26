@@ -1,0 +1,4 @@
+dataset,version,pairs,merged,merged_fraction
+mock-12,vsearch v2.32.0_macos_aarch64,20000,12262,0.6131
+mock-24,vsearch v2.32.0_macos_aarch64,20000,1,5e-05
+mock-25,vsearch v2.32.0_macos_aarch64,20000,35,0.00175

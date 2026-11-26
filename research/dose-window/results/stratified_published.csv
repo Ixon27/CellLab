@@ -1,0 +1,34 @@
+threshold,measure,stratum,drugs,mean,low95,high95,precision_consensus,precision_gdsc1,precision_gdsc2,chance,pairs
+0.75,gain_vs_gdsc1,comparable,31,0.0120423,-0.0208812,0.0444751,0.263653,0.251611,0.233331,0.0971425,7421
+0.75,gain_vs_gdsc1,not_comparable,17,0.0227604,-0.0168609,0.0656127,0.244618,0.221858,0.237386,0.0956595,4069
+0.75,gain_vs_gdsc1,comparable - not_comparable,48,-0.0107182,-0.0642247,0.0428145,,,,,
+0.75,gain_vs_gdsc2,comparable,31,0.0303221,-0.000300014,0.0603008,0.263653,0.251611,0.233331,0.0971425,7421
+0.75,gain_vs_gdsc2,not_comparable,17,0.00723152,-0.0489864,0.0587253,0.244618,0.221858,0.237386,0.0956595,4069
+0.75,gain_vs_gdsc2,comparable - not_comparable,48,0.0230906,-0.0373681,0.0880521,,,,,
+0.75,gain_vs_mean_single,comparable,31,0.0211822,-0.00317272,0.0442008,0.263653,0.251611,0.233331,0.0971425,7421
+0.75,gain_vs_mean_single,not_comparable,17,0.014996,-0.0189272,0.0522625,0.244618,0.221858,0.237386,0.0956595,4069
+0.75,gain_vs_mean_single,comparable - not_comparable,48,0.0061862,-0.0372404,0.0493246,,,,,
+0.9,gain_vs_gdsc1,comparable,0,,,,,,,,0
+0.9,gain_vs_gdsc1,not_comparable,48,0.0158383,-0.0105093,0.0411812,0.256912,0.241073,0.234767,0.0966173,11490
+0.9,gain_vs_gdsc1,comparable - not_comparable,48,,,,,,,,
+0.9,gain_vs_gdsc2,comparable,0,,,,,,,,0
+0.9,gain_vs_gdsc2,not_comparable,48,0.0221442,-0.00635502,0.0492958,0.256912,0.241073,0.234767,0.0966173,11490
+0.9,gain_vs_gdsc2,comparable - not_comparable,48,,,,,,,,
+0.9,gain_vs_mean_single,comparable,0,,,,,,,,0
+0.9,gain_vs_mean_single,not_comparable,48,0.0189912,-0.00073575,0.0392721,0.256912,0.241073,0.234767,0.0966173,11490
+0.9,gain_vs_mean_single,comparable - not_comparable,48,,,,,,,,
+0.95,gain_vs_gdsc1,comparable,0,,,,,,,,0
+0.95,gain_vs_gdsc1,not_comparable,48,0.0158383,-0.00990947,0.0416002,0.256912,0.241073,0.234767,0.0966173,11490
+0.95,gain_vs_gdsc1,comparable - not_comparable,48,,,,,,,,
+0.95,gain_vs_gdsc2,comparable,0,,,,,,,,0
+0.95,gain_vs_gdsc2,not_comparable,48,0.0221442,-0.00627523,0.0497918,0.256912,0.241073,0.234767,0.0966173,11490
+0.95,gain_vs_gdsc2,comparable - not_comparable,48,,,,,,,,
+0.95,gain_vs_mean_single,comparable,0,,,,,,,,0
+0.95,gain_vs_mean_single,not_comparable,48,0.0189912,-0.00118519,0.038475,0.256912,0.241073,0.234767,0.0966173,11490
+0.95,gain_vs_mean_single,comparable - not_comparable,48,,,,,,,,
+,gain_vs_gdsc1,all drugs,48,0.0158383,-0.0098767,0.0419621,,,,,
+,gain_vs_gdsc1,spearman_vs_cov_min,48,-0.020252,,,,,,,
+,gain_vs_gdsc2,all drugs,48,0.0221442,-0.00600775,0.0500667,,,,,
+,gain_vs_gdsc2,spearman_vs_cov_min,48,0.0299389,,,,,,,
+,gain_vs_mean_single,all drugs,48,0.0189912,-0.000679421,0.0386652,,,,,
+,gain_vs_mean_single,spearman_vs_cov_min,48,0.0347875,,,,,,,

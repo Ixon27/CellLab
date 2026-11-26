@@ -1,0 +1,9 @@
+taxon,expected_log2_ratio_24_over_25,observed_log2_ratio_24_over_25,reads_24,reads_25,bias_shift_log2
+Amanita muscaria,-9.957099040199807,,0,7,
+Amphinema byssoides,3.3219455252897427,2.584962500721156,24,2,-0.7369830245685867
+Coprinopsis cinerea,3.321708763041289,,2,0,
+Mortierella alpina,6.6419583294775215,,0,0,
+Schizosaccharomyces pombe,6.643724824456581,,0,0,
+Spizellomyces punctatus,-6.635137351687007,,0,0,
+Tricholoma vaccinum,-3.321979466427905,,0,0,
+Tylospora asterophora,-3.3220130600535094,-2.3219280948873626,2,5,1.0000849651661468
