@@ -1,5 +1,7 @@
 # 세포 종류 간 정보를 섞으면 새로운 연구의 반응을 더 잘 맞힐까?
 
+**확장판:** [영문 원고](manuscript.md) · [90개 후보·독립 사람 연구·재현 명령](../cytokine-effects/README.md) · [대표 그림](../cytokine-effects/results/validation.png). 같은 2,745개 유전자로 같은 대식세포 실험을 판별해도 후보를 4개에서 90개로 늘리면 정답은 3/4에서 1/4로 줄었다. 아래는 확장 전 유전자 목록 검증 결과다.
+
 **연구 판단:** [영문 원고 초안](manuscript.md) · [대표 그림](results/external-validation.png). 먼저 [Wood 사람 단일세포 → Parse](../cytokine-single/results/macro.csv)에서 IL-2와 IL-4를 검증했다. 6명·4개 세포 종류에서 단순 변화량을 쓰면 대체로 1:1 혼합이 나았지만, [limma로 사람 간 변동까지 반영](results/moderated.csv)하면 IL-4에서는 단독 방법이 더 좋았다. [새 적응형 모델](adaptive-plan.md)은 미리 정한 통과 기준을 충족하지 못했다. [Parse를 전혀 거치지 않은 Wood → 외부 연구 3개](results/double_holdout.csv)에서는 둘의 차이가 6명 기준 0.17%p에 그쳤다. 따라서 신모델 우월성보다는 분석법과 검증 대상에 따라 결론이 달라지는 재현성 벤치마크로 투고하는 편이 타당하다.
 
 연구 질문과 원래 결과는 [Kang → Parse 단일 자극 파일럿](../transcript-transfer/external-results.md). 여기서는 (1) 예측하는 쪽의 종·자극을 바꾸고 (2) 정답을 제공하는 쪽도 기존에 사용하지 않은 사람 연구로 바꿨다. 두 분석의 절대 수치는 직접 비교할 수 없다.

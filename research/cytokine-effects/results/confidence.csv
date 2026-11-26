@@ -1,0 +1,26 @@
+study,time,ligand,type,candidates,rank,guess,correct,gap,missing_class_gap,threshold,accept,missing_accept,validation
+Kang,6h,IFN-beta,CD14 monocyte,90,1,IFN-beta,True,0.022791091514946737,0.08721703516366486,inf,False,False,leave_study_out
+Kang,6h,IFN-beta,CD56dim NK cell,90,1,IFN-beta,True,0.04013299749763971,0.04602983992196091,inf,False,False,leave_study_out
+Kang,6h,IFN-beta,Naive B cell,90,1,IFN-beta,True,0.013949611916606819,0.0010361095523275798,inf,False,False,leave_study_out
+Kang,6h,IFN-beta,Naive CD4 T cell,90,2,IL-2,False,0.005103806918086207,0.0308337596319046,inf,False,False,leave_study_out
+Waddell,24h,IFN-gamma,CD14 monocyte,90,2,IL-12,False,0.07491347863973691,0.11353950482617628,0.005554402090835797,True,True,leave_study_out
+Waddell,24h,IFN-gamma,CD56dim NK cell,90,6,IL-15,False,0.0016854659315402032,0.0016854659315402032,0.005554402090835797,False,False,leave_study_out
+Waddell,24h,IFN-gamma,Naive B cell,90,9,IL-2,False,0.03190919014842089,0.03190919014842089,0.005554402090835797,True,True,leave_study_out
+Waddell,24h,IFN-gamma,Naive CD4 T cell,90,3,IL-27,False,0.004360108861202999,0.004360108861202999,0.005554402090835797,False,False,leave_study_out
+Wood,48h,IL-2,CD14 monocyte,90,2,IL-7,False,0.04241610770287729,0.06322360273498362,inf,False,False,leave_study_out
+Wood,48h,IL-2,CD56dim NK cell,90,1,IL-2,True,0.007313198559306233,0.21508663720447357,inf,False,False,leave_study_out
+Wood,48h,IL-2,Naive B cell,90,2,IL-7,False,0.00035828914073648965,0.03591434112980729,inf,False,False,leave_study_out
+Wood,48h,IL-2,Naive CD4 T cell,90,2,IL-7,False,0.05184041291762287,0.0713246048224262,inf,False,False,leave_study_out
+Wood,48h,IL-4,CD14 monocyte,90,1,IL-4,True,0.0543564321482195,0.41388934633670804,inf,False,False,leave_study_out
+Wood,48h,IL-4,CD56dim NK cell,90,1,IL-4,True,0.13309319289578223,0.0253623998729344,inf,False,False,leave_study_out
+Wood,48h,IL-4,Naive B cell,90,1,IL-4,True,0.13229160621493308,0.24123266182444048,inf,False,False,leave_study_out
+Wood,48h,IL-4,Naive CD4 T cell,90,1,IL-4,True,0.29787164379146436,0.026724589070808047,inf,False,False,leave_study_out
+Xue,72h,IFN-gamma,CD14 monocyte,90,5,IL-2,False,0.0014815964075191035,0.0014815964075191035,inf,False,False,leave_study_out
+Xue,72h,IL-10,CD14 monocyte,90,19,IGF-1,False,0.0016484920729136904,0.0016484920729136904,inf,False,False,leave_study_out
+Xue,72h,IL-13,CD14 monocyte,90,1,IL-13,True,0.005554402090835797,0.0005547503015329025,inf,False,False,leave_study_out
+Xue,72h,IL-4,CD14 monocyte,90,2,IL-13,False,0.019226250668126693,0.03648318818360999,inf,False,False,leave_study_out
+Yuan,24h,IL-4,CD14 monocyte,90,1,IL-4,True,0.024547312327763415,0.07344666083556112,inf,False,False,leave_study_out
+GSE12198,high,IL-2,CD56dim NK cell,90,2,IL-15,False,0.018375254148568776,0.1704750806578761,inf,False,False,frozen_NK
+GSE12198,low,IL-2,CD56dim NK cell,90,2,IL-15,False,0.01929865014709431,0.19437748407207261,inf,False,False,frozen_NK
+GSE22886,IL15,IL-15,CD56dim NK cell,90,1,IL-15,True,0.004359167871190728,0.20295652720379675,inf,False,False,frozen_NK
+GSE22886,IL2,IL-2,CD56dim NK cell,90,2,IL-15,False,0.01255851554278098,0.1977215831928631,inf,False,False,frozen_NK

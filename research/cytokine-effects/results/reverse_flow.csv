@@ -1,0 +1,15 @@
+study,ligand,contrast,se_assumption,lineages,target_symbols,eligible,tau_zero_fraction
+Wood,IL-2,48h,correlated,4,19589,3259,0.1276465173366063
+Wood,IL-2,48h,independent,4,19589,3259,0.1276465173366063
+Wood,IL-4,48h,correlated,4,19864,3334,0.07108578284343131
+Wood,IL-4,48h,independent,4,19864,3334,0.07108578284343131
+Kang,IFN-beta,6h,correlated,4,7449,2569,0.11288439081354612
+Kang,IFN-beta,6h,independent,4,7449,2569,0.07084468664850137
+Waddell,IFN-gamma,24 h,correlated,4,10762,2714,0.3577745025792189
+Waddell,IFN-gamma,24 h,independent,4,10762,2714,0.19307295504789979
+Waddell,IFN-gamma,12 h,correlated,5,10589,2686,0.39612807148175727
+Waddell,IFN-gamma,12 h,independent,5,10589,2686,0.2088607594936709
+Cano-Gamez,IL-12,Th1_16h_cocktail,correlated,2,12446,4524,0.7365163572060124
+Cano-Gamez,IL-12,Th1_16h_cocktail,independent,2,12446,4524,0.7365163572060124
+Cano-Gamez,IL-4,Th2_16h_cocktail,correlated,2,12444,4286,0.4575361642557163
+Cano-Gamez,IL-4,Th2_16h_cocktail,independent,2,12444,4286,0.4575361642557163

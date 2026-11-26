@@ -1,0 +1,13 @@
+lineage,arm,pseudobulks,cells,min_cells,max_cells
+mono,Baseline,6,3003,286,758
+mono,IL-2,6,3178,306,839
+mono,IL-4,6,3943,339,851
+B_n,Baseline,6,428,26,135
+B_n,IL-2,6,534,40,233
+B_n,IL-4,6,536,25,159
+CD4_Tn,Baseline,6,696,39,336
+CD4_Tn,IL-2,6,672,37,327
+CD4_Tn,IL-4,6,674,38,304
+NK,Baseline,6,521,23,166
+NK,IL-2,6,455,30,157
+NK,IL-4,6,511,47,167
