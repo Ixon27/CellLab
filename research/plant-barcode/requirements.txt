@@ -1,3 +1,0 @@
-biopython==1.88
-primer3-py==2.4.0
-requests==2.34.2

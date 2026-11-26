@@ -1,7 +1,0 @@
-dataset,read_file,reads,frac_plus,frac_minus,frac_no_hit_or_tie
-mock-12,forward,5000,0.9982,0.0,0.0018
-mock-12,reverse,5000,0.0,0.9912,0.0088
-mock-24,forward,5000,0.0,0.8692,0.1308
-mock-24,reverse,5000,0.8314,0.0,0.1686
-mock-25,forward,5000,0.0,0.86,0.14
-mock-25,reverse,5000,0.7436,0.0,0.2564

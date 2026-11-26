@@ -1,7 +1,0 @@
-method,split,species,genera,covered,distinct_within_split
-primer3_penalty,design,37,6,9,0
-primer3_penalty,heldout,16,5,0,0
-panel_selected,design,37,6,14,5
-panel_selected,heldout,16,5,6,4
-published_grass_rbcL,design,37,6,19,5
-published_grass_rbcL,heldout,16,5,7,4

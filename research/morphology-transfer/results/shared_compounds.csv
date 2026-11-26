@@ -1,7 +1,0 @@
-bbbc021_compound,bbbc021_moa,jump_name,compound_ap_same_condition,compound_ap_cross_cell_line,compound_ap_cross_time,jump_moa_annotation
-PP-2,Epithelial,PP-2,1.0,0.8758432539682539,1.0,src inhibitor
-anisomycin,Protein synthesis,anisomycin,0.8170138888888889,0.3339451871615731,0.5040493303082796,DNA synthesis inhibitor
-colchicine,Microtubule destabilizers,colchicine,0.5216988995481643,0.11934927346715717,0.1379121929047724,microtubule inhibitor
-cyclohexamide,Protein synthesis,cycloheximide,1.0,0.3200185562544716,0.25250505049287814,protein synthesis inhibitor
-epothilone B,Microtubule stabilizers,epothilone-b,0.9864583333333333,0.19028490874835927,0.5618124675707182,microtubule stabilizing agent|tubulin polymerization inhibitor
-simvastatin,Cholesterol-lowering,simvastatin,0.6351271609943936,0.047393548391734146,0.22374612023879248,HMGCR inhibitor

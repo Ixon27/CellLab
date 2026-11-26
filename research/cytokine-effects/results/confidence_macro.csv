@@ -1,8 +1,0 @@
-validation,study,queries,forced_correct,accepted,accepted_correct,missing_false_accept
-frozen_NK,GSE12198,2,0,0,0,0
-frozen_NK,GSE22886,2,1,0,0,0
-leave_study_out,Kang,4,3,0,0,0
-leave_study_out,Waddell,4,0,2,0,2
-leave_study_out,Wood,8,5,0,0,0
-leave_study_out,Xue,4,1,0,0,0
-leave_study_out,Yuan,1,1,0,0,0
