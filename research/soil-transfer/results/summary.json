@@ -1,0 +1,99 @@
+{
+  "provenance": {
+    "meta_sha256": "3e954fc063c1e94b0415635c3fafab732a317f379f01a76514ca399f6442f0ed",
+    "biom_zip_sha256": "b37526a447138eb521ec22bd202eea7fd9a67cdab22c37bc1f7b548d75e886cd",
+    "biom_member_sha256": "b1a2731920c08080e7c74892367b927d160d305110a444774d3f21a45475aa84",
+    "meta_url": "https://qiita.ucsd.edu/public_download/?data=sample_information&study_id=103",
+    "biom_url": "https://qiita.ucsd.edu/public_download/?data=biom&study_id=103&data_type=16S",
+    "biom_member": "processed_data/238_otu_table.biom"
+  },
+  "audit": {
+    "biom_samples": 89,
+    "metadata_rows": 89,
+    "biom_samples_in_metadata": 89,
+    "biom_samples_with_numeric_pH": 89,
+    "dropped_below_min_reads": [
+      "103.BB1"
+    ],
+    "min_reads": 200,
+    "samples_modelled": 88,
+    "metadata_rows_without_biom_table_sample": [],
+    "otus": 7396,
+    "reads_per_sample_min_median_max": [
+      1,
+      966,
+      1413
+    ],
+    "sites": 37,
+    "joined_table": "results/joined_samples.tsv",
+    "acidobacteria_otus": 1393
+  },
+  "n": 88,
+  "results": {
+    "leave_site_out": {
+      "mean_baseline": {
+        "rmse": 1.47903808818319,
+        "r2": -0.06885670949320843
+      },
+      "acidobacteria_linear": {
+        "rmse": 1.1034751009756172,
+        "r2": 0.4050426312330099,
+        "rmse_minus_baseline_ci95": [
+          -0.5819235878702097,
+          -0.18142495647818926
+        ]
+      },
+      "ridge_otu": {
+        "rmse": 0.4877728320060289,
+        "r2": 0.8837491903816765,
+        "rmse_minus_baseline_ci95": [
+          -1.1782354387096226,
+          -0.7990110534193792
+        ]
+      },
+      "rf_otu": {
+        "rmse": 0.6045032102880776,
+        "r2": 0.8214507646082,
+        "rmse_minus_baseline_ci95": [
+          -1.053035008399891,
+          -0.6930824559869293
+        ]
+      }
+    },
+    "random_split_leaky": {
+      "mean_baseline": {
+        "rmse": 1.4405110152850964,
+        "r2": -0.013897235157700027
+      },
+      "acidobacteria_linear": {
+        "rmse": 0.9998696108987563,
+        "r2": 0.5115191871188196,
+        "rmse_minus_baseline_ci95": [
+          -0.6149619867841535,
+          -0.25244290863384433
+        ]
+      },
+      "ridge_otu": {
+        "rmse": 0.4547224016492939,
+        "r2": 0.8989692745130835,
+        "rmse_minus_baseline_ci95": [
+          -1.1728408322216914,
+          -0.7978481639165311
+        ]
+      },
+      "rf_otu": {
+        "rmse": 0.5554861576683534,
+        "r2": 0.849232666539958,
+        "rmse_minus_baseline_ci95": [
+          -1.059759054328531,
+          -0.7021218077676764
+        ]
+      }
+    }
+  },
+  "site_permutation_null_ridge_rmse": {
+    "n_perm": 20,
+    "mean": 1.5797150116318304,
+    "min": 1.2425118930901067
+  }
+}
