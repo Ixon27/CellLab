@@ -1,0 +1,40 @@
+bbbc021_compound,moa,has_smiles,jump_connectivity_match,jump_best_name,jump_name_similarity,structure_match
+ALLN,Protein degradation,True,,saclofen,0.5,False
+AZ-A,Aurora kinase inhibitors,False,,ak-7,0.5,False
+AZ-C,Eg5 inhibitors,False,,ak-7,0.5,False
+AZ-J,Epithelial,False,,ak-7,0.5,False
+AZ-U,Epithelial,False,,ak-7,0.5,False
+AZ138,Eg5 inhibitors,True,,azd1283,0.67,False
+AZ258,Aurora kinase inhibitors,True,,azd1283,0.67,False
+AZ841,Aurora kinase inhibitors,True,,az191,0.6,False
+DMSO,DMSO,False,,desonide,0.5,False
+MG-132,Protein degradation,True,,ml-323,0.67,False
+PD-169316,Kinase inhibitors,True,,pf-431396,0.56,False
+PP-2,Epithelial,True,PP-2,pp-2,1.0,True
+alsterpaullone,Kinase inhibitors,True,,ixabepilone,0.56,False
+anisomycin,Protein synthesis,True,anisomycin,anisomycin,1.0,True
+bryostatin,Kinase inhibitors,True,,alrestatin,0.7,False
+camptothecin,DNA replication,True,,colchicine,0.55,False
+chlorambucil,DNA damage,True,,loperamide,0.55,False
+cisplatin,DNA damage,True,,polydatin,0.67,False
+colchicine,Microtubule destabilizers,True,colchicine,colchicine,1.0,True
+cyclohexamide,Protein synthesis,True,cycloheximide,cycloheximide,0.92,True
+cytochalasin B,Actin disruptors,True,,oxytocin,0.55,False
+cytochalasin D,Actin disruptors,True,,oxytocin,0.55,False
+demecolcine,Microtubule destabilizers,True,,colchicine,0.67,False
+docetaxel,Microtubule stabilizers,True,,1-octanol,0.56,False
+emetine,Protein synthesis,True,,menadione,0.62,False
+epothilone B,Microtubule stabilizers,True,epothilone-b,epothilone-b,0.92,True
+etoposide,DNA damage,True,,ethoxzolamide,0.64,False
+floxuridine,DNA replication,True,,flupirtine,0.67,False
+lactacystin,Protein degradation,True,,acetylcysteine,0.72,False
+latrunculin B,Actin disruptors,True,,acalabrutinib,0.54,False
+methotrexate,DNA replication,True,,thiostrepton,0.58,False
+mevinolin/lovastatin,Cholesterol-lowering,True,,simvastatin,0.58,False
+mitomycin C,DNA damage,True,,anisomycin,0.67,False
+mitoxantrone,DNA replication,True,,spiroxatrine,0.67,False
+nocodazole,Microtubule destabilizers,True,,enilconazole,0.73,False
+proteasome inhibitor I,Protein degradation,True,,src-kinase-inhibitor-i,0.64,False
+simvastatin,Cholesterol-lowering,True,simvastatin,simvastatin,1.0,True
+taxol,Microtubule stabilizers,True,,1-octanol,0.57,False
+vincristine,Microtubule destabilizers,True,,picrotin,0.63,False
