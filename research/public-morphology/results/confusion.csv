@@ -1,0 +1,62 @@
+protocol,true_moa,pred_profile,n
+NSC,Actin disruptors,Actin disruptors,4
+NSC,Actin disruptors,Eg5 inhibitors,1
+NSC,Aurora kinase inhibitors,Aurora kinase inhibitors,12
+NSC,Cholesterol-lowering,Cholesterol-lowering,5
+NSC,Cholesterol-lowering,Protein degradation,1
+NSC,DNA damage,DNA damage,8
+NSC,DNA damage,DNA replication,1
+NSC,DNA replication,DNA damage,4
+NSC,DNA replication,DNA replication,3
+NSC,DNA replication,Protein degradation,1
+NSC,Eg5 inhibitors,Eg5 inhibitors,12
+NSC,Epithelial,Epithelial,8
+NSC,Kinase inhibitors,Kinase inhibitors,5
+NSC,Microtubule destabilizers,DNA damage,1
+NSC,Microtubule destabilizers,Microtubule destabilizers,13
+NSC,Microtubule stabilizers,Microtubule stabilizers,8
+NSC,Microtubule stabilizers,Protein degradation,1
+NSC,Protein degradation,Cholesterol-lowering,1
+NSC,Protein degradation,DNA replication,1
+NSC,Protein degradation,Protein degradation,5
+NSC,Protein synthesis,Protein synthesis,8
+NSCB_plate_group,Actin disruptors,Actin disruptors,4
+NSCB_plate_group,Actin disruptors,Eg5 inhibitors,1
+NSCB_plate_group,Aurora kinase inhibitors,Aurora kinase inhibitors,12
+NSCB_plate_group,Cholesterol-lowering,Cholesterol-lowering,5
+NSCB_plate_group,Cholesterol-lowering,Protein degradation,1
+NSCB_plate_group,DNA damage,DNA damage,8
+NSCB_plate_group,DNA damage,DNA replication,1
+NSCB_plate_group,DNA replication,DNA damage,4
+NSCB_plate_group,DNA replication,DNA replication,3
+NSCB_plate_group,DNA replication,Protein degradation,1
+NSCB_plate_group,Eg5 inhibitors,Eg5 inhibitors,12
+NSCB_plate_group,Epithelial,Epithelial,8
+NSCB_plate_group,Microtubule destabilizers,DNA damage,1
+NSCB_plate_group,Microtubule destabilizers,Microtubule destabilizers,13
+NSCB_plate_group,Microtubule stabilizers,Microtubule stabilizers,8
+NSCB_plate_group,Microtubule stabilizers,Protein degradation,1
+NSCB_plate_group,Protein degradation,Cholesterol-lowering,1
+NSCB_plate_group,Protein degradation,DNA replication,1
+NSCB_plate_group,Protein degradation,Protein degradation,5
+NSCB_plate_group,Protein synthesis,Protein synthesis,8
+NSCB_week,Actin disruptors,Eg5 inhibitors,1
+NSCB_week,Actin disruptors,Microtubule stabilizers,1
+NSCB_week,Actin disruptors,Protein synthesis,3
+NSCB_week,Aurora kinase inhibitors,Aurora kinase inhibitors,12
+NSCB_week,DNA damage,DNA damage,7
+NSCB_week,DNA damage,DNA replication,2
+NSCB_week,DNA replication,DNA damage,4
+NSCB_week,DNA replication,DNA replication,3
+NSCB_week,DNA replication,Protein degradation,1
+NSCB_week,Eg5 inhibitors,Eg5 inhibitors,12
+NSCB_week,Epithelial,Epithelial,8
+NSCB_week,Microtubule destabilizers,DNA damage,1
+NSCB_week,Microtubule destabilizers,Eg5 inhibitors,8
+NSCB_week,Microtubule destabilizers,Microtubule destabilizers,5
+NSCB_week,Microtubule stabilizers,Microtubule stabilizers,8
+NSCB_week,Microtubule stabilizers,Protein degradation,1
+NSCB_week,Protein degradation,Cholesterol-lowering,1
+NSCB_week,Protein degradation,DNA replication,1
+NSCB_week,Protein degradation,Protein degradation,5
+NSCB_week,Protein synthesis,Protein synthesis,8

@@ -1,0 +1,115 @@
+protocol,compound,true_moa,week,n_treatments,n_eligible,n_correct
+NSC,ALLN,Protein degradation,2,2,2,1
+NSC,AZ-A,Aurora kinase inhibitors,1,6,6,6
+NSC,AZ-C,Eg5 inhibitors,3,7,7,7
+NSC,AZ-J,Epithelial,5,3,3,3
+NSC,AZ-U,Epithelial,10,3,3,3
+NSC,AZ138,Eg5 inhibitors,10,5,5,5
+NSC,AZ258,Aurora kinase inhibitors,4,3,3,3
+NSC,AZ841,Aurora kinase inhibitors,3,3,3,3
+NSC,MG-132,Protein degradation,2,2,2,1
+NSC,PD-169316,Kinase inhibitors,7,2,2,2
+NSC,PP-2,Epithelial,8,2,2,2
+NSC,alsterpaullone,Kinase inhibitors,7,2,2,2
+NSC,anisomycin,Protein synthesis,4,2,2,2
+NSC,bryostatin,Kinase inhibitors,7,1,1,1
+NSC,camptothecin,DNA replication,8,3,3,1
+NSC,chlorambucil,DNA damage,3,1,1,1
+NSC,cisplatin,DNA damage,3,1,1,1
+NSC,colchicine,Microtubule destabilizers,1,1,1,0
+NSC,cyclohexamide,Protein synthesis,4,3,3,3
+NSC,cytochalasin B,Actin disruptors,1,2,2,2
+NSC,cytochalasin D,Actin disruptors,2,1,1,0
+NSC,demecolcine,Microtubule destabilizers,3,4,4,4
+NSC,docetaxel,Microtubule stabilizers,7,3,3,2
+NSC,emetine,Protein synthesis,3,3,3,3
+NSC,epothilone B,Microtubule stabilizers,1,3,3,3
+NSC,etoposide,DNA damage,3,3,3,3
+NSC,floxuridine,DNA replication,9,2,2,1
+NSC,lactacystin,Protein degradation,6,1,1,1
+NSC,latrunculin B,Actin disruptors,1,2,2,2
+NSC,methotrexate,DNA replication,2,1,1,0
+NSC,mevinolin/lovastatin,Cholesterol-lowering,9,3,3,3
+NSC,mitomycin C,DNA damage,4,4,4,3
+NSC,mitoxantrone,DNA replication,9,2,2,1
+NSC,nocodazole,Microtubule destabilizers,1,2,2,2
+NSC,proteasome inhibitor I,Protein degradation,7,2,2,2
+NSC,simvastatin,Cholesterol-lowering,9,3,3,2
+NSC,taxol,Microtubule stabilizers,1,3,3,3
+NSC,vincristine,Microtubule destabilizers,3,7,7,7
+NSCB_plate_group,ALLN,Protein degradation,2,2,2,1
+NSCB_plate_group,AZ-A,Aurora kinase inhibitors,1,6,6,6
+NSCB_plate_group,AZ-C,Eg5 inhibitors,3,7,7,7
+NSCB_plate_group,AZ-J,Epithelial,5,3,3,3
+NSCB_plate_group,AZ-U,Epithelial,10,3,3,3
+NSCB_plate_group,AZ138,Eg5 inhibitors,10,5,5,5
+NSCB_plate_group,AZ258,Aurora kinase inhibitors,4,3,3,3
+NSCB_plate_group,AZ841,Aurora kinase inhibitors,3,3,3,3
+NSCB_plate_group,MG-132,Protein degradation,2,2,2,1
+NSCB_plate_group,PD-169316,Kinase inhibitors,7,2,0,0
+NSCB_plate_group,PP-2,Epithelial,8,2,2,2
+NSCB_plate_group,alsterpaullone,Kinase inhibitors,7,2,0,0
+NSCB_plate_group,anisomycin,Protein synthesis,4,2,2,2
+NSCB_plate_group,bryostatin,Kinase inhibitors,7,1,0,0
+NSCB_plate_group,camptothecin,DNA replication,8,3,3,1
+NSCB_plate_group,chlorambucil,DNA damage,3,1,1,1
+NSCB_plate_group,cisplatin,DNA damage,3,1,1,1
+NSCB_plate_group,colchicine,Microtubule destabilizers,1,1,1,0
+NSCB_plate_group,cyclohexamide,Protein synthesis,4,3,3,3
+NSCB_plate_group,cytochalasin B,Actin disruptors,1,2,2,2
+NSCB_plate_group,cytochalasin D,Actin disruptors,2,1,1,0
+NSCB_plate_group,demecolcine,Microtubule destabilizers,3,4,4,4
+NSCB_plate_group,docetaxel,Microtubule stabilizers,7,3,3,2
+NSCB_plate_group,emetine,Protein synthesis,3,3,3,3
+NSCB_plate_group,epothilone B,Microtubule stabilizers,1,3,3,3
+NSCB_plate_group,etoposide,DNA damage,3,3,3,3
+NSCB_plate_group,floxuridine,DNA replication,9,2,2,1
+NSCB_plate_group,lactacystin,Protein degradation,6,1,1,1
+NSCB_plate_group,latrunculin B,Actin disruptors,1,2,2,2
+NSCB_plate_group,methotrexate,DNA replication,2,1,1,0
+NSCB_plate_group,mevinolin/lovastatin,Cholesterol-lowering,9,3,3,3
+NSCB_plate_group,mitomycin C,DNA damage,4,4,4,3
+NSCB_plate_group,mitoxantrone,DNA replication,9,2,2,1
+NSCB_plate_group,nocodazole,Microtubule destabilizers,1,2,2,2
+NSCB_plate_group,proteasome inhibitor I,Protein degradation,7,2,2,2
+NSCB_plate_group,simvastatin,Cholesterol-lowering,9,3,3,2
+NSCB_plate_group,taxol,Microtubule stabilizers,1,3,3,3
+NSCB_plate_group,vincristine,Microtubule destabilizers,3,7,7,7
+NSCB_week,ALLN,Protein degradation,2,2,2,1
+NSCB_week,AZ-A,Aurora kinase inhibitors,1,6,6,6
+NSCB_week,AZ-C,Eg5 inhibitors,3,7,7,7
+NSCB_week,AZ-J,Epithelial,5,3,3,3
+NSCB_week,AZ-U,Epithelial,10,3,3,3
+NSCB_week,AZ138,Eg5 inhibitors,10,5,5,5
+NSCB_week,AZ258,Aurora kinase inhibitors,4,3,3,3
+NSCB_week,AZ841,Aurora kinase inhibitors,3,3,3,3
+NSCB_week,MG-132,Protein degradation,2,2,2,1
+NSCB_week,PD-169316,Kinase inhibitors,7,2,0,0
+NSCB_week,PP-2,Epithelial,8,2,2,2
+NSCB_week,alsterpaullone,Kinase inhibitors,7,2,0,0
+NSCB_week,anisomycin,Protein synthesis,4,2,2,2
+NSCB_week,bryostatin,Kinase inhibitors,7,1,0,0
+NSCB_week,camptothecin,DNA replication,8,3,3,1
+NSCB_week,chlorambucil,DNA damage,3,1,1,1
+NSCB_week,cisplatin,DNA damage,3,1,1,1
+NSCB_week,colchicine,Microtubule destabilizers,1,1,1,0
+NSCB_week,cyclohexamide,Protein synthesis,4,3,3,3
+NSCB_week,cytochalasin B,Actin disruptors,1,2,2,0
+NSCB_week,cytochalasin D,Actin disruptors,2,1,1,0
+NSCB_week,demecolcine,Microtubule destabilizers,3,4,4,2
+NSCB_week,docetaxel,Microtubule stabilizers,7,3,3,2
+NSCB_week,emetine,Protein synthesis,3,3,3,3
+NSCB_week,epothilone B,Microtubule stabilizers,1,3,3,3
+NSCB_week,etoposide,DNA damage,3,3,3,2
+NSCB_week,floxuridine,DNA replication,9,2,2,1
+NSCB_week,lactacystin,Protein degradation,6,1,1,1
+NSCB_week,latrunculin B,Actin disruptors,1,2,2,0
+NSCB_week,methotrexate,DNA replication,2,1,1,0
+NSCB_week,mevinolin/lovastatin,Cholesterol-lowering,9,3,0,0
+NSCB_week,mitomycin C,DNA damage,4,4,4,3
+NSCB_week,mitoxantrone,DNA replication,9,2,2,1
+NSCB_week,nocodazole,Microtubule destabilizers,1,2,2,2
+NSCB_week,proteasome inhibitor I,Protein degradation,7,2,2,2
+NSCB_week,simvastatin,Cholesterol-lowering,9,3,0,0
+NSCB_week,taxol,Microtubule stabilizers,1,3,3,3
+NSCB_week,vincristine,Microtubule destabilizers,3,7,7,1

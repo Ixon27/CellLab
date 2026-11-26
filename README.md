@@ -13,6 +13,7 @@
 실험 기록은 이 컴퓨터에 저장됩니다. **문헌·분양처 자료에서 배양 조건을 추출할 때만** 본인의 Claude 또는 Codex 계정을 사용합니다. 기록과 계산에는 AI가 필요 없습니다.
 
 별도 연구: [위상차 영상으로 세포핵 수 변화 추정하기](research/nuclear-count/README.md). 공개 LIVECell 데이터로 검증하는 파일럿이며 배포 앱의 자동 계수 기능은 아닙니다.
+직접 실험이 필요 없는 연구: [공개데이터 연구 후보](research/public-only-topics.md) · [약물 스크린 4종 비교 원고 초안](research/screen-consensus/manuscript.md).
 
 ## 목차
 
