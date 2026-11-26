@@ -1,0 +1,17 @@
+cytokine,source_type,target_type,direction,source_genes,target_genes_in_source
+IL-2,mono,CD14 monocyte,Up,43942,482
+IL-2,B_n,Naive B cell,Up,43942,484
+IL-2,CD4_Tn,Naive CD4 T cell,Up,43942,474
+IL-2,NK,CD56dim NK cell,Up,43942,483
+IL-2,mono,CD14 monocyte,Down,43942,480
+IL-2,B_n,Naive B cell,Down,43942,479
+IL-2,CD4_Tn,Naive CD4 T cell,Down,43942,483
+IL-2,NK,CD56dim NK cell,Down,43942,464
+IL-4,mono,CD14 monocyte,Up,43942,484
+IL-4,B_n,Naive B cell,Up,43942,487
+IL-4,CD4_Tn,Naive CD4 T cell,Up,43942,473
+IL-4,NK,CD56dim NK cell,Up,43942,468
+IL-4,mono,CD14 monocyte,Down,43942,470
+IL-4,B_n,Naive B cell,Down,43942,472
+IL-4,CD4_Tn,Naive CD4 T cell,Down,43942,467
+IL-4,NK,CD56dim NK cell,Down,43942,471
