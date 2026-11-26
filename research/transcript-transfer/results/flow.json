@@ -1,0 +1,58 @@
+{
+  "source": "GEO GSE96583 batch2 (Kang et al. 2018), ctrl GSM2560248 vs IFN-beta GSM2560249",
+  "sha256": {
+    "GSE96583_RAW.tar": "e5d41a3248a813f99d68fd5c9eb9773de7f46a83680a67f4a02d683b8955fe80",
+    "GSE96583_batch2.genes.tsv.gz": "93aa4e9b530ef9d6411ca129b416324c5cc1cc5a01a1fa6ed4f4a845480ed3ca",
+    "GSE96583_batch2.total.tsne.df.tsv.gz": "1d57e72e92ca8695250e88cc0f1c3fa8c0be1175d974f8b427c58f1274dc6c09"
+  },
+  "singlets_with_label": 24673,
+  "donors": [
+    101,
+    107,
+    1015,
+    1016,
+    1039,
+    1244,
+    1256,
+    1488
+  ],
+  "cell_types_kept": [
+    "B cells",
+    "CD14+ Monocytes",
+    "CD4 T cells",
+    "CD8 T cells",
+    "FCGR3A+ Monocytes",
+    "NK cells"
+  ],
+  "cell_types_dropped": [
+    "Dendritic cells",
+    "Megakaryocytes"
+  ],
+  "min_cells_per_donor_type_condition": 10,
+  "genes_total": 35635,
+  "genes_kept": 7449,
+  "min_gene_umis": 200,
+  "seed": 2026,
+  "headline_macro_over_cell_types": {
+    "observed": {
+      "all_r_celltype": 0.6225227122853909,
+      "all_r_dev": 0.3524534146069421,
+      "all_rho_dev": 0.30405544319113775,
+      "responsive_r_celltype": 0.915285818710828,
+      "responsive_r_dev": 0.7018564268715246,
+      "responsive_mse_gain_celltype_vs_pooled": 0.49229695350287106,
+      "top100_dev_abs_overlap": 0.2750952380952381
+    },
+    "type_permuted": {
+      "all_r_celltype": 0.5769766939928169,
+      "all_r_dev": 0.0004064556261986061,
+      "all_rho_dev": 0.0002926717812540353,
+      "responsive_r_celltype": 0.8879279253196344,
+      "responsive_r_dev": 0.00032822057232996185,
+      "responsive_mse_gain_celltype_vs_pooled": -0.7995061560466159,
+      "top100_dev_abs_overlap": 0.04911666666666666
+    }
+  },
+  "n_splits": 35,
+  "n_permutations_per_split": 20
+}

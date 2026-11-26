@@ -1,0 +1,49 @@
+cell,ind,ctrl,stim
+B cells,101,107,135
+B cells,107,44,54
+B cells,1015,453,341
+B cells,1016,126,116
+B cells,1039,27,40
+B cells,1244,116,93
+B cells,1256,216,208
+B cells,1488,218,279
+CD14+ Monocytes,101,202,253
+CD14+ Monocytes,107,209,169
+CD14+ Monocytes,1015,779,671
+CD14+ Monocytes,1016,369,329
+CD14+ Monocytes,1039,126,165
+CD14+ Monocytes,1244,415,290
+CD14+ Monocytes,1256,390,375
+CD14+ Monocytes,1488,295,348
+CD4 T cells,101,293,382
+CD4 T cells,107,158,186
+CD4 T cells,1015,848,734
+CD4 T cells,1016,422,353
+CD4 T cells,1039,189,281
+CD4 T cells,1244,1068,854
+CD4 T cells,1256,1001,954
+CD4 T cells,1488,1182,1484
+CD8 T cells,101,74,105
+CD8 T cells,107,20,15
+CD8 T cells,1015,179,133
+CD8 T cells,1016,536,489
+CD8 T cells,1039,26,31
+CD8 T cells,1244,58,32
+CD8 T cells,1256,131,112
+CD8 T cells,1488,58,43
+FCGR3A+ Monocytes,101,80,144
+FCGR3A+ Monocytes,107,32,37
+FCGR3A+ Monocytes,1015,252,228
+FCGR3A+ Monocytes,1016,115,128
+FCGR3A+ Monocytes,1039,34,47
+FCGR3A+ Monocytes,1244,56,35
+FCGR3A+ Monocytes,1256,69,97
+FCGR3A+ Monocytes,1488,101,144
+NK cells,101,70,104
+NK cells,107,40,46
+NK cells,1015,177,195
+NK cells,1016,128,195
+NK cells,1039,19,24
+NK cells,1244,105,114
+NK cells,1256,261,231
+NK cells,1488,116,168

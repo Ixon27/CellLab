@@ -1,0 +1,97 @@
+donors,cell_type,cell_budget,direction,model,precision
+1,B cells,24,Down,pooled,0.049140625
+1,B cells,24,Down,type,0.066640625
+1,B cells,24,Up,pooled,0.44515625000000003
+1,B cells,24,Up,type,0.35171875
+1,CD14+ Monocytes,120,Down,pooled,0.07171875
+1,CD14+ Monocytes,120,Down,type,0.0975
+1,CD14+ Monocytes,120,Up,pooled,0.10203125
+1,CD14+ Monocytes,120,Up,type,0.143125
+1,CD4 T cells,128,Down,pooled,0.058984375
+1,CD4 T cells,128,Down,type,0.06703125
+1,CD4 T cells,128,Up,pooled,0.171953125
+1,CD4 T cells,128,Up,type,0.14046875
+1,CD8 T cells,8,Down,pooled,0.07906250000000001
+1,CD8 T cells,8,Down,type,0.052109375
+1,CD8 T cells,8,Up,pooled,0.379453125
+1,CD8 T cells,8,Up,type,0.22921875
+1,FCGR3A+ Monocytes,32,Down,pooled,0.0734375
+1,FCGR3A+ Monocytes,32,Down,type,0.09390625
+1,FCGR3A+ Monocytes,32,Up,pooled,0.44609375
+1,FCGR3A+ Monocytes,32,Up,type,0.39578125
+1,NK cells,16,Down,pooled,0.080078125
+1,NK cells,16,Down,type,0.054921875
+1,NK cells,16,Up,pooled,0.53109375
+1,NK cells,16,Up,type,0.3175
+2,B cells,24,Down,pooled,0.049296875000000004
+2,B cells,24,Down,type,0.06453125
+2,B cells,24,Up,pooled,0.439140625
+2,B cells,24,Up,type,0.34078125
+2,CD14+ Monocytes,120,Down,pooled,0.0703125
+2,CD14+ Monocytes,120,Down,type,0.09671875
+2,CD14+ Monocytes,120,Up,pooled,0.1078125
+2,CD14+ Monocytes,120,Up,type,0.13671875
+2,CD4 T cells,128,Down,pooled,0.056171875
+2,CD4 T cells,128,Down,type,0.066796875
+2,CD4 T cells,128,Up,pooled,0.171484375
+2,CD4 T cells,128,Up,type,0.13890625
+2,CD8 T cells,8,Down,pooled,0.068515625
+2,CD8 T cells,8,Down,type,0.05109375
+2,CD8 T cells,8,Up,pooled,0.37484375
+2,CD8 T cells,8,Up,type,0.22648437500000002
+2,FCGR3A+ Monocytes,32,Down,pooled,0.07140625
+2,FCGR3A+ Monocytes,32,Down,type,0.09406250000000001
+2,FCGR3A+ Monocytes,32,Up,pooled,0.44515625
+2,FCGR3A+ Monocytes,32,Up,type,0.38328125
+2,NK cells,16,Down,pooled,0.0728125
+2,NK cells,16,Down,type,0.0565625
+2,NK cells,16,Up,pooled,0.52375
+2,NK cells,16,Up,type,0.30609375
+4,B cells,24,Down,pooled,0.048828125
+4,B cells,24,Down,type,0.06476562500000001
+4,B cells,24,Up,pooled,0.439921875
+4,B cells,24,Up,type,0.345625
+4,CD14+ Monocytes,120,Down,pooled,0.069375
+4,CD14+ Monocytes,120,Down,type,0.10015625
+4,CD14+ Monocytes,120,Up,pooled,0.1040625
+4,CD14+ Monocytes,120,Up,type,0.13453125
+4,CD4 T cells,128,Down,pooled,0.0565625
+4,CD4 T cells,128,Down,type,0.0671875
+4,CD4 T cells,128,Up,pooled,0.170234375
+4,CD4 T cells,128,Up,type,0.1409375
+4,CD8 T cells,8,Down,pooled,0.07
+4,CD8 T cells,8,Down,type,0.052187500000000005
+4,CD8 T cells,8,Up,pooled,0.377421875
+4,CD8 T cells,8,Up,type,0.22625
+4,FCGR3A+ Monocytes,32,Down,pooled,0.0690625
+4,FCGR3A+ Monocytes,32,Down,type,0.10296875
+4,FCGR3A+ Monocytes,32,Up,pooled,0.450625
+4,FCGR3A+ Monocytes,32,Up,type,0.37984375
+4,NK cells,16,Down,pooled,0.07046875
+4,NK cells,16,Down,type,0.05734375
+4,NK cells,16,Up,pooled,0.526796875
+4,NK cells,16,Up,type,0.3075
+8,B cells,24,Down,pooled,0.049453125
+8,B cells,24,Down,type,0.069609375
+8,B cells,24,Up,pooled,0.43671875
+8,B cells,24,Up,type,0.341796875
+8,CD14+ Monocytes,120,Down,pooled,0.066875
+8,CD14+ Monocytes,120,Down,type,0.10078125
+8,CD14+ Monocytes,120,Up,pooled,0.10421875
+8,CD14+ Monocytes,120,Up,type,0.13234375
+8,CD4 T cells,128,Down,pooled,0.060703125000000004
+8,CD4 T cells,128,Down,type,0.06406250000000001
+8,CD4 T cells,128,Up,pooled,0.17203125
+8,CD4 T cells,128,Up,type,0.13625
+8,CD8 T cells,8,Down,pooled,0.0721875
+8,CD8 T cells,8,Down,type,0.0475
+8,CD8 T cells,8,Up,pooled,0.38046875
+8,CD8 T cells,8,Up,type,0.2253125
+8,FCGR3A+ Monocytes,32,Down,pooled,0.075
+8,FCGR3A+ Monocytes,32,Down,type,0.08953125
+8,FCGR3A+ Monocytes,32,Up,pooled,0.4428125
+8,FCGR3A+ Monocytes,32,Up,type,0.3828125
+8,NK cells,16,Down,pooled,0.07421875
+8,NK cells,16,Down,type,0.056875
+8,NK cells,16,Up,pooled,0.525703125
+8,NK cells,16,Up,type,0.3075
